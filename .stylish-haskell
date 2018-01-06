@@ -1,0 +1,33 @@
+# stylish-haskell configuration file
+# ==================================
+
+# The stylish-haskell tool is mainly configured by specifying steps. These steps
+# are a list, so they have an order, and one specific step may appear more than
+# once (if needed). Each file is processed by these steps in the given order.
+steps:
+  # Align the right hand side of some elements.  This is quite conservative
+  # and only applies to statements where each element occupies a single
+  # line.
+  - simple_align:
+      cases: true
+      top_level_patterns: true
+      records: true
+
+  - imports:
+      align: group
+      list_align: after_alias
+      pad_module_names: true
+      long_list_align: inline
+      empty_list_align: inherit
+      separate_lists: false
+      space_surround: false
+
+  - language_pragmas:
+      style: vertical
+      align: true
+      remove_redundant: true
+
+  - trailing_whitespace: {}
+
+columns: 100
+newline: lf
