@@ -30,9 +30,22 @@ mkInteger :: Bool   -- ^ sign of integer ('True' if non-negative)
           -> [Int]  -- ^ absolute value expressed in 31 bit chunks, least
                     -- significant first
           -> Integer
-mkInteger _ [I# i] = S# i
-mkInteger _ _      = S# 0#
+mkInteger _ [I# i] = S# (i `andI#` 0x7FFFFFFF#)
+mkInteger _ is = runS . liftIO $ do
+  bn <- newBN
+  go bn is
+  return $ B# bn
+ where
+  go bn [(I# i)] = setWord bn (int2Word# (i `andI#` 0x7FFFFFFF#))
+  go bn ((I# i):xs) = do
+    go bn xs
+    lshift bn 31#
+    setWord bn (int2Word# (i `andI#` 0x7FFFFFFF#))
 {-# NOINLINE mkInteger #-}
+
+smallInteger :: Int# -> Integer
+smallInteger i# = S# i#
+{-# NOINLINE smallInteger #-}
 
 -- * Internal functions
 
@@ -65,14 +78,20 @@ freeCtx (CTX# addr) = bn_ctx_free addr
 -- void BN_CTX_free(BN_CTX *c);
 foreign import ccall unsafe "BN_CTX_free" bn_ctx_free :: Addr# -> IO ()
 
+bn2dec :: BigNum -> [Char]
+bn2dec (BN# addr) = unpackCString# (bn_bn2dec addr)
+
+-- char *BN_bn2dec(const BIGNUM *a);
+foreign import ccall unsafe "BN_bn2dec" bn_bn2dec :: Addr# -> Addr#
+
 bn2hex :: BigNum -> [Char]
 bn2hex (BN# addr) = unpackCString# (bn_bn2hex addr)
 
 -- char *BN_bn2hex(const BIGNUM *a);
 foreign import ccall unsafe "BN_bn2hex" bn_bn2hex :: Addr# -> Addr#
 
-setWord :: BigNum -> Word -> IO ()
-setWord (BN# addr) (W# w) = do
+setWord :: BigNum -> Word# -> IO ()
+setWord (BN# addr) w = do
   x <- bn_set_word addr w
   case x of
     1 -> return ()
@@ -81,6 +100,30 @@ setWord (BN# addr) (W# w) = do
 -- int BN_set_word(BIGNUM *a, BN_ULONG w);
 foreign import ccall unsafe "BN_set_word" bn_set_word :: Addr# -> Word# -> IO Int
 
+lshift :: BigNum -> Int# -> IO ()
+lshift (BN# a) n
+  | isTrue# (n ==# 0#) = return ()
+  | isTrue# (n ># 0#) = do
+      x <- bn_lshift a a n
+      case x of
+        1 -> return ()
+        _ -> IO $ fail "BN_lshift failed"
+  | isTrue# (n <# 0#) = IO $ fail "BN_lshift negative n"
+
+-- int BN_lshift(BIGNUM *r, const BIGNUM *a, int n);
+foreign import ccall unsafe "BN_lshift" bn_lshift :: Addr# -> Addr# -> Int# -> IO Int
+
+addBN :: BigNum -> BigNum -> IO BigNum
+addBN (BN# a) (BN# b) = do
+  (BN# r) <- newBN
+  x <- bn_add r a b
+  case x of
+    1 -> return $ BN# r
+    _ -> runS $ fail "BN_add failed"
+
+-- int BN_add(BIGNUM *r, const BIGNUM *a, const BIGNUM *b);
+foreign import ccall unsafe "BN_add" bn_add :: Addr# -> Addr# -> Addr# -> IO Int
+
 mulBN :: BigNum -> BigNum -> IO BigNum
 mulBN (BN# a) (BN# b) = do
   ctx@(CTX# c) <- newCtx
@@ -88,118 +131,18 @@ mulBN (BN# a) (BN# b) = do
   x <- bn_mul r a b c
   freeCtx ctx
   case x of
-    0 -> return $ BN# r
+    1 -> return $ BN# r
     _ -> runS $ fail "BN_mul failed"
 
 -- int BN_mul(BIGNUM *r, const BIGNUM *a, const BIGNUM *b, BN_CTX *ctx);
 foreign import ccall unsafe "BN_mul" bn_mul :: Addr# -> Addr# -> Addr# -> Addr# -> IO Int
 
-
--- newBigNum :: Int# -> S s BigNum
--- newBigNum n s =
---   let (# s', mba #) = newByteArray# n s
---       (# s'', ba #) = unsafeFreezeByteArray# mba s'
---   in  (# s'', BN# ba #)
-
-
--- Foreign.Storable:
-
--- class Storable a where
---    {-# MINIMAL sizeOf, alignment,
---                (peek | peekElemOff | peekByteOff),
---                (poke | pokeElemOff | pokeByteOff) #-}
-
---    sizeOf      :: a -> Int
---    -- ^ Computes the storage requirements (in bytes) of the argument.
---    -- The value of the argument is not used.
-
---    alignment   :: a -> Int
---    -- ^ Computes the alignment constraint of the argument.  An
---    -- alignment constraint @x@ is fulfilled by any address divisible
---    -- by @x@.  The value of the argument is not used.
-
---    peekElemOff :: Ptr a -> Int      -> IO a
---    -- ^       Read a value from a memory area regarded as an array
---    --         of values of the same kind.  The first argument specifies
---    --         the start address of the array and the second the index into
---    --         the array (the first element of the array has index
---    --         @0@).  The following equality holds,
---    -- 
---    -- > peekElemOff addr idx = IOExts.fixIO $ \result ->
---    -- >   peek (addr `plusPtr` (idx * sizeOf result))
---    --
---    --         Note that this is only a specification, not
---    --         necessarily the concrete implementation of the
---    --         function.
-
---    pokeElemOff :: Ptr a -> Int -> a -> IO ()
---    -- ^       Write a value to a memory area regarded as an array of
---    --         values of the same kind.  The following equality holds:
---    -- 
---    -- > pokeElemOff addr idx x = 
---    -- >   poke (addr `plusPtr` (idx * sizeOf x)) x
-
---    peekByteOff :: Ptr b -> Int      -> IO a
---    -- ^       Read a value from a memory location given by a base
---    --         address and offset.  The following equality holds:
---    --
---    -- > peekByteOff addr off = peek (addr `plusPtr` off)
-
---    pokeByteOff :: Ptr b -> Int -> a -> IO ()
---    -- ^       Write a value to a memory location given by a base
---    --         address and offset.  The following equality holds:
---    --
---    -- > pokeByteOff addr off x = poke (addr `plusPtr` off) x
-  
---    peek        :: Ptr a      -> IO a
---    -- ^ Read a value from the given memory location.
---    --
---    --  Note that the peek and poke functions might require properly
---    --  aligned addresses to function correctly.  This is architecture
---    --  dependent; thus, portable code should ensure that when peeking or
---    --  poking values of some type @a@, the alignment
---    --  constraint for @a@, as given by the function
---    --  'alignment' is fulfilled.
-
---    poke        :: Ptr a -> a -> IO ()
---    -- ^ Write the given value to the given memory location.  Alignment
---    -- restrictions might apply; see 'peek'.
- 
---    -- circular default instances
---    peekElemOff = peekElemOff_ undefined
---       where peekElemOff_ :: Storable a => a -> Ptr a -> Int -> IO a
---             peekElemOff_ undef ptr (I# off) =
---               let (I# s) = sizeOf undef
---               in peekByteOff ptr (I# (off *# s))
---    pokeElemOff ptr (I# off) val =
---      let (I# v) = sizeOf val
---      in pokeByteOff ptr (I# (off *# v)) val
-
---    peekByteOff (Ptr ptr) (I# off) = peek $ Ptr (ptr `plusAddr#` off)
---    pokeByteOff (Ptr ptr) (I# off) = poke $ Ptr (ptr `plusAddr#` off)
-
---    peek ptr = peekElemOff ptr 0
---    poke ptr = pokeElemOff ptr 0
-
--- -- | @since 4.9.0.0
--- instance Storable () where
---   sizeOf _ = 0
---   alignment _ = 1
---   peek _ = IO $ return ()
---   poke _ _ = IO $ return ()
-
--- instance Storable (Ptr a) where
---   sizeOf _ = SIZEOF_HSPTR
---   alignment _ = ALIGNMENT_HSPTR
---   peekElemOff (Ptr a) (I# i) =
---     IO $ \s -> case readAddrOffAddr# a i s of (# s2, x #) -> (# s2, Ptr x #)
---   pokeElemOff (Ptr a) (I# i) (Ptr x) =
---     IO $ \s -> case writeAddrOffAddr# a i x s      of s2 -> (# s2, () #)
-
 -- Foreign:
 
 type role Ptr phantom
 data Ptr a = Ptr Addr#
+
+-- TODO(SN): add a managed Ptr to free on garbage collect (ForeignPtr)
 
 -- From integer-gmp:
 -- monadic combinators for low-level state threading

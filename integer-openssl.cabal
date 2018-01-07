@@ -34,10 +34,8 @@ library
   exposed-modules: GHC.Integer
   -- ghc-options: -this-unit-id integer-openssl -- TODO(SN): this-unit-id drops version info and is probably required when integrating with ghc
 
-  -- extra-libraries: crypto
-  include-dirs: openssl/include
+  extra-libraries: crypto
   includes: openssl/bn.h
-  c-sources: openssl/crypto/bn/bn_mul.c
 
 library integer-openssl-internal
   default-language: Haskell2010
