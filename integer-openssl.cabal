@@ -55,3 +55,4 @@ test-suite integer-openssl-test
                , hspec
                , integer-openssl-internal
                , integer-gmp
+               , QuickCheck
