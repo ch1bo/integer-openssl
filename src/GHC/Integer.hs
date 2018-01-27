@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns             #-}
 {-# LANGUAGE CPP                      #-}
 {-# LANGUAGE ExplicitForAll           #-}
 {-# LANGUAGE ForeignFunctionInterface #-}
@@ -34,16 +35,14 @@ wordSize = I# WORD_SIZE_IN_BITS#
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
 
--- | OpenSSL BIGNUM represented by sign 'Int#' and magnitude 'ByteArray#'. It
--- corresponds to the 'neg' flag and 'd' array in libcrypto's bignum_st
+-- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
+-- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
 -- structure. Length is always a multiple of Word#, least-significant first
 -- (BN_BITS2 == WORD_SIZE_IN_BITS).
-data BigNum = BN#
-              Int# -- ^ Sign, 0# is positive
-              ByteArray# -- ^ Magnitude, length is multiple of Word#, LSB first
+data BigNum = BN# ByteArray#
 
 -- | Mutable variant of BigNum for internal use.
-data MutableBigNum s = MBN# Int# (MutableByteArray# s)
+data MutableBigNum s = MBN# (MutableByteArray# s)
 
 data Integer = S# !Int#
                -- ^ small integer
@@ -91,13 +90,14 @@ orInteger _ y@(S# -1#) = y
 orInteger (S# a#) (S# b#) = S# (a# `orI#` b#)
 orInteger (Bp# x) (Bp# y) = Bp# (orBigNum x y)
 orInteger (Bn# x) (Bn# y) =
-  bigNumToInteger (plusBigNumWord ((minusBigNumWord x 1##) `andBigNum` (minusBigNumWord y 1##)) 1##)
+  bigNumToNegInteger (plusBigNumWord 1# (andBigNum (minusBigNumWord 1# x 1##)
+                                                   (minusBigNumWord 1# y 1##)) 1##)
 orInteger x@(Bn# _) y@(Bp# _) = orInteger y x -- swap for next case
 orInteger (Bp# x) (Bn# y) =
-  bigNumToInteger (plusBigNumWord (andnBigNum (minusBigNumWord y 1##) x) 1##)
+  bigNumToNegInteger (plusBigNumWord 1# (andnBigNum (minusBigNumWord 1# y 1##) x) 1##)
 -- -- TODO/FIXpromotion-hack
--- orInteger  x@(S# _)   y          = orInteger (unsafePromote x) y
--- orInteger  x           y {- S# -}= orInteger x (unsafePromote y)
+orInteger  x@(S# _) y = orInteger (unsafePromote x) y
+orInteger  x  y@(S# _) = orInteger x (unsafePromote y)
 {-# NOINLINE orInteger #-}
 
 -- HACK warning! breaks invariant on purpose
@@ -107,33 +107,45 @@ unsafePromote (S# x#)
     | True                = Bn# (wordToBigNum (int2Word# (negateInt# x#)))
 unsafePromote x = x
 
+-- | Shift-left operation. Undefined for negative shift amount ('Int#').
 shiftLInteger :: Integer -> Int# -> Integer
-shiftLInteger i _ = i
+shiftLInteger x 0# = x
+shiftLInteger (S# 0#) _  = S# 0#
+-- TODO re-enable shiftLInteger (S# 1#) n# = bitInteger n#
+shiftLInteger (S# i#) n#
+  | isTrue# (i# >=# 0#) = bigNumToInteger (shiftLBigNum (wordToBigNum (int2Word# i#)) n#)
+  | True = bigNumToNegInteger (shiftLBigNum (wordToBigNum (int2Word# (negateInt# i#))) n#)
+shiftLInteger (Bp# bn) n# = Bp# (shiftLBigNum bn n#)
+shiftLInteger (Bn# bn) n# = Bn# (shiftLBigNum bn n#)
+{-# NOINLINE shiftLInteger #-}
 
 -- * Functions operating on BigNum
 
 zeroBigNum :: BigNum
-zeroBigNum = runS (newBigNum 1# 0# >>= freezeBigNum)
+zeroBigNum = runS (newBigNum 1# >>= freezeBigNum)
 
--- | Create a BigNum from a single Word# and sign Int# - 1# if negative.
-wordToBigNum :: Word# -> Int# -> BigNum
-wordToBigNum w# neg# = runS $ do
-  mbn <- newBigNum 1# neg#
+-- | Create a BigNum from a single Word#.
+wordToBigNum :: Word# -> BigNum
+wordToBigNum w# = runS $ do
+  mbn <- newBigNum 1#
   writeBigNum mbn 0# w#
   freezeBigNum mbn
 
 -- | Truncate a BigNum to a single Word#.
 bigNumToWord :: BigNum -> Word#
-bigNumToWord (BN# _ ba) = indexWordArray# ba 0#
+bigNumToWord (BN# ba) = indexWordArray# ba 0#
 
--- | Create the Integer from given BigNum. Converts to small Integer if possible.
+-- | Create a positive Integer from given BigNum. Converts to small Integer if possible.
 bigNumToInteger :: BigNum -> Integer
-bigNumToInteger bn@(BN# 0# _)
+bigNumToInteger bn
   | isTrue# ((wordsInBigNum# bn ==# 1#) `andI#` (i# >=# 0#)) = S# i#
   | True = Bp# bn
   where
     i# = word2Int# (bigNumToWord bn)
-bigNumToInteger bn@(BN# 1# _)
+
+-- | Create a negative Integer from given BigNum. Converts to small Integer if possible.
+bigNumToNegInteger :: BigNum -> Integer
+bigNumToNegInteger bn
   | isTrue# ((wordsInBigNum# bn ==# 1#) `andI#` (i# <=# 0#)) = S# i#
   | True = Bn# bn
   where
@@ -146,11 +158,13 @@ eqBigNumWord# bn w# =
 
 -- | Get number of Word# in BigNum. See newBigNum for shift explanation.
 wordsInBigNum# :: BigNum -> Int#
-wordsInBigNum# (BN# _ ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
+wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
 
--- | Bitwise OR of two BigNum, resulting BigNum is positive.
+-- ** Bit-operations
+
+-- | Bitwise OR of two BigNum.
 orBigNum :: BigNum -> BigNum -> BigNum
-orBigNum x@(BN# _ x#) y@(BN# _ y#)
+orBigNum x@(BN# x#) y@(BN# y#)
   | isTrue# (eqBigNumWord# x 0##) = y
   | isTrue# (eqBigNumWord# y 0##) = x
   | isTrue# (nx# >=# ny#) = orBigNum' x# y# nx# ny#
@@ -161,14 +175,16 @@ orBigNum x@(BN# _ x#) y@(BN# _ y#)
 
   -- assumes n# >= m#
   orBigNum' a# b# n# m# = runS $ do
-    mbn @ (MBN# _ mba#) <- newBigNum n#
-    copyWordArray# a# m# mba# m# n#
+    mbn@(MBN# mba#) <- newBigNum n#
     mapWordArray# a# b# mba# or# m#
+    case isTrue# (n# ==# m#) of
+      False -> copyWordArray# a# m# mba# m# (n# -# m#)
+      True  -> return# ()
     freezeBigNum mbn
 
--- | Bitwise AND of two BigNum, resulting BigNum is positive.
+-- | Bitwise AND of two BigNum.
 andBigNum :: BigNum -> BigNum -> BigNum
-andBigNum x@(BN# _ x#) y@(BN# _ y#)
+andBigNum x@(BN# x#) y@(BN# y#)
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
   | isTrue# (eqBigNumWord# y 0##) = zeroBigNum
   | isTrue# (nx# >=# ny#) = andBigNum' x# y# nx# ny#
@@ -179,13 +195,13 @@ andBigNum x@(BN# _ x#) y@(BN# _ y#)
 
   -- assumes n# >= m#
   andBigNum' a# b# n# m# = runS $ do
-    mbn @ (MBN# _ mba#) <- newBigNum n#
+    mbn@(MBN# mba#) <- newBigNum n#
     mapWordArray# a# b# mba# and# m#
     freezeBigNum mbn -- TODO(SN): resize mbn if possible
 
 -- | Bitwise ANDN (= AND . NOT) of two BigNum, resulting BigNum is positive.
 andnBigNum :: BigNum -> BigNum -> BigNum
-andnBigNum x@(BN# _ x#) y@(BN# _ y#)
+andnBigNum x@(BN# x#) y@(BN# y#)
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
   | isTrue# (eqBigNumWord# y 0##) = x
   | isTrue# (nx# >=# ny#) = andnBigNum' x# y# nx# ny#
@@ -196,68 +212,98 @@ andnBigNum x@(BN# _ x#) y@(BN# _ y#)
 
   -- assumes n# >= m# -- TODO(SN): test as gmp does something different?
   andnBigNum' a# b# n# m# = runS $ do
-    mbn @ (MBN# _ mba#) <- newBigNum n#
+    mbn@(MBN# mba#) <- newBigNum n#
     mapWordArray# a# b# mba# (\a b -> a `and#` (not# b)) m#
     freezeBigNum mbn -- TODO(SN): resize mbn if possible
 
+-- | Shift left logical, undefined for negative Int#.
+shiftLBigNum :: BigNum -> Int# -> BigNum
+shiftLBigNum x 0# = x
+shiftLBigNum x _
+  | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
+shiftLBigNum a@(BN# ba#) c# = runS $ do
+  r@(MBN# mbr#) <- newBigNum nr#
+  (I# i#) <- liftIO (bn_lshift mbr# nr# ba# na# c#)
+  shrinkBigNum r i# >>= freezeBigNum
+ where
+  na# = wordsInBigNum# a
+  nr# = na# +# nwords# +# 1#
+  nwords# = quotInt# c# WORD_SIZE_IN_BITS#
+
+-- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
+foreign import ccall unsafe "integer_bn_lshift"
+  bn_lshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
+
+-- ** Arithmetic operations
+
 -- | Add given Word# to BigNum.
-plusBigNumWord :: BigNum -> Word# -> BigNum
-plusBigNumWord a@(BN# sa# _) w# = runS $ do
-  r@(MBN# _ mbr#) <- newBigNum na#
+plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
+               -> BigNum -> Word# -> BigNum
+plusBigNumWord neg# a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
   copyBigNum a r
-  (I# neg#) <- liftIO (bn_add_word sa# mbr# na# w#)
-  freezeBigNum (MBN# neg# mbr#)
+  (I# i#) <- liftIO (bn_add_word neg# mbr# na# w#)
+  shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
 
--- int integer_bn_add_word(int rneg, BN_ULONG *r, size_t rsize, BN_ULONG w)
--- int BN_add_word(BIGNUM *a, BN_ULONG w);
+-- size_t integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_add_word"
   bn_add_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
 
 -- | Subtract given Word# from BigNum.
-minusBigNumWord :: BigNum -> Word# -> BigNum
-minusBigNumWord a@(BN# sa# _) w# = runS $ do
-  r@(MBN# _ mbr#) <- newBigNum na#
+minusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
+                -> BigNum -> Word# -> BigNum
+minusBigNumWord neg# a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
   copyBigNum a r
-  (I# neg#) <- liftIO (bn_sub_word sa# mbr# na# w#)
-  freezeBigNum (MBN# neg# mbr#)
+  (I# i#) <- liftIO (bn_sub_word neg# mbr# na# w#)
+  shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
 
--- int integer_bn_sub_word(BN_ULONG *r, bool sa, const BN_ULONG *ba, size_t xsize, BN_ULONG w) {
--- int BN_sub_word(BIGNUM *a, BN_ULONG w);
+-- size_t integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_sub_word"
   bn_sub_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
 
--- * Low-level BigNum creation and manipulation
+-- ** Low-level BigNum creation and manipulation
 
--- | Create a MutableBigNum with given count of words and sign (1# if negative)
-newBigNum :: Int# -> Int# -> S s (MutableBigNum s)
-newBigNum count# neg# s =
+-- | Create a MutableBigNum with given count of words.
+newBigNum :: Int# -> S s (MutableBigNum s)
+newBigNum count# s =
   -- Calculate byte size using shifts, e.g. for 64bit systems:
   -- total bytes = word count * 8 = word count * 2 ^ 3 = word count << 3
   case newByteArray# (count# `uncheckedIShiftL#` WORD_SHIFT#) s of
-    (# s', mba# #) -> (# s', MBN# neg# mba# #)
+    (# s', mba# #) -> (# s', MBN# mba# #)
 
 -- | Freeze a MutableBigNum into a BigNum.
 freezeBigNum :: MutableBigNum s -> S s BigNum
-freezeBigNum (MBN# sa# mba#) s =
+freezeBigNum (MBN# mba#) s =
   case unsafeFreezeByteArray# mba# s of
-    (# s', ba# #) -> (# s', BN# sa# ba# #)
+    (# s', ba# #) -> (# s', BN# ba# #)
+
+-- | Shrink a MutableBigNum the the given count of Word#.
+shrinkBigNum :: MutableBigNum s -> Int# -> S s (MutableBigNum s)
+shrinkBigNum mbn 0# s = (# s, mbn #)
+shrinkBigNum mbn@(MBN# mba#) n# s
+  | isTrue# (actual# ==# desired#) = (# s', mbn #)
+  | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mbn #)
+ where
+  !(# s', actual# #) = getSizeofMutableByteArray# mba# s
+  desired# = n# `uncheckedIShiftL#` WORD_SHIFT#
 
 -- | Write a word to a MutableBigNum at given word index. Size is not checked!
 writeBigNum :: MutableBigNum s -> Int# -> Word# -> S s ()
-writeBigNum (MBN# _ mba#) i# w# s =
+writeBigNum (MBN# mba#) i# w# s =
   let s' = writeWordArray# mba# i# w# s
   in  (# s', () #)
 
 -- | Copy magnitude from given BigNum into MutableBigNum.
 copyBigNum :: BigNum -> MutableBigNum s -> S s ()
-copyBigNum a@(BN# _ ba#) (MBN# _ mbb#) =
+copyBigNum a@(BN# ba#) (MBN# mbb#) =
   copyWordArray# ba# 0# mbb# 0# (wordsInBigNum# a)
 
--- * Utilities for ByteArray#s of Word#s
+-- * ByteArray# utilities
 
 -- | Copy multiples of Word# between ByteArray#s with offsets in words.
 copyWordArray# :: ByteArray# -> Int# -> MutableByteArray# s -> Int# -> Int# -> S s ()
@@ -377,11 +423,10 @@ mapWordArray# a# b# mba# f i# s =
 -- data Ptr a = Ptr Addr#
 -- TODO(SN): add a managed Ptr to free on garbage collect (ForeignPtr)
 
-{-# INLINE (.) #-}
-(.) :: (b -> c) -> (a -> b) -> a -> c
-f . g = \x -> f (g x)
 
--- From integer-gmp (requires -XRebindableSyntax):
+-- * Borrowed things
+
+-- ** From integer-gmp (requires -XRebindableSyntax):
 -- monadic combinators for low-level state threading
 
 type S s a = State# s -> (# State# s, a #)
@@ -406,10 +451,6 @@ f $ x = f x
 svoid :: (State# s -> State# s) -> S s ()
 svoid m0 = \s -> case m0 s of s' -> (# s', () #)
 
-{-# INLINE return #-}
-return :: a -> IO a
-return a = IO $ \s -> (# s, a #)
-
 {-# INLINE return# #-}
 return# :: a -> S s a
 return# a = \s -> (# s, a #)
@@ -426,7 +467,17 @@ runS m = case runRW# m of (# _, a #) -> a
 fail :: [Char] -> S s a
 fail s = return# (raise# s)
 
--- From GHC.Err:
+-- ** From Base
+
+{-# INLINE (.) #-}
+(.) :: (b -> c) -> (a -> b) -> a -> c
+f . g = \x -> f (g x)
+
+{-# INLINE return #-}
+return :: a -> IO a
+return a = IO $ \s -> (# s, a #)
+
+-- ** From GHC.Err:
 
 undefined :: forall a. a
 undefined = runS $ fail "Prelude.undefined"

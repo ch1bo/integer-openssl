@@ -54,6 +54,10 @@ main = do
           shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
                          (Y.negateInteger $ Y.smallInteger INT_MINBOUND#)
 
+      describe "shiftLInteger" $ do
+        prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
+          showHexX (X.shiftLInteger (X.smallInteger i) c#) === showHexY (Y.shiftLInteger (Y.smallInteger i) c#)
+
     describe "BigNum" $ do
       prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
         W# (X.bigNumToWord (X.wordToBigNum w#)) === w
@@ -62,7 +66,10 @@ main = do
         show (X.wordToBigNum (w1 `or#` w2)) === show ((X.wordToBigNum w1) `X.orBigNum` (X.wordToBigNum w2))
 
       prop "minusBigNumWord (wordToBigNum w) w == wordToBigNum 0" $ \(W# w#) ->
-        show (X.minusBigNumWord (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)
+        show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)
+
+      -- it "can shift left" $ do
+      --   print (X.shiftLBigNum (X.wordToBigNum 1##) 64#)
 
     -- it "Can create Integers" $ do
     --     shouldEqualHex (X.mkInteger True [0xbb, 0xaa])
@@ -96,7 +103,7 @@ showHexX :: X.Integer -> String
 showHexX i@(X.S# i#)
   | isTrue# (i# >=# 0#) = showHex (I# i#) ""
   | otherwise = "-" ++ (showHexX (X.negateInteger i))
-showHexX (X.Bn# bn) = show bn
+showHexX (X.Bn# bn) = "-" ++ (show bn)
 showHexX (X.Bp# bn) = show bn
 
 -- TODO(SN): decimal show instance
@@ -105,8 +112,7 @@ instance Show X.Integer where
 
 instance Show X.BigNum where
   -- Return base16 encoded string of underlying byte array, MSB first
-  show (X.BN# 1# ba#) = "-" ++ show (X.BN# 0# ba#)
-  show (X.BN# _ ba#) =
+  show (X.BN# ba#) =
     dropWhile (== '0') $ go (sizeofByteArray# ba# -# 1#)
    where
     go 0# = word8hex (indexWord8Array# ba# 0#)
