@@ -47,7 +47,7 @@ test-suite integer-openssl-test
                , ghc-prim
                , hspec
                , integer-openssl-internal
-               , integer-gmp
+               , integer-simple
                , QuickCheck
 
 benchmark integer-openssl-bench
@@ -60,5 +60,4 @@ benchmark integer-openssl-bench
                , ghc-prim
                , criterion
                , integer-openssl-internal
-               , integer-gmp
-               , QuickCheck
+               , integer-simple
