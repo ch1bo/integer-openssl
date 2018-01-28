@@ -24,13 +24,6 @@ library
   default-language: Haskell2010
   hs-source-dirs: src/
   build-depends: ghc-prim ^>= 0.5.1.0
-  default-extensions: NoImplicitPrelude
-                    , MagicHash
-                    , UnboxedTuples
-                    , CPP
-                    , ForeignFunctionInterface
-                    , UnliftedFFITypes
-
   exposed-modules: GHC.Integer
   -- ghc-options: -this-unit-id integer-openssl -- TODO(SN): this-unit-id drops version info and is probably required when integrating with ghc
 
@@ -49,11 +42,23 @@ test-suite integer-openssl-test
   main-is: Spec.hs
   hs-source-dirs: test
   default-language: Haskell2010
-  default-extensions: MagicHash
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends: base >=4.7 && <5
                , ghc-prim
                , hspec
+               , integer-openssl-internal
+               , integer-gmp
+               , QuickCheck
+
+benchmark integer-openssl-bench
+  type: exitcode-stdio-1.0
+  main-is: Bench.hs
+  hs-source-dirs: bench
+  default-language: Haskell2010
+  ghc-options: -threaded -rtsopts -with-rtsopts=-N
+  build-depends: base >=4.7 && <5
+               , ghc-prim
+               , criterion
                , integer-openssl-internal
                , integer-gmp
                , QuickCheck

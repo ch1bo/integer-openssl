@@ -1,17 +1,21 @@
-{-# LANGUAGE CPP #-}
+{-# LANGUAGE CPP                 #-}
+{-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
-import Numeric (showHex)
-import Data.Bits ((.&.))
-import Data.Char (intToDigit)
-import GHC.Prim
-import GHC.Types
-import Test.Hspec (hspec, describe, it, shouldBe, Expectation)
-import Test.Hspec.QuickCheck (prop)
-import Test.QuickCheck hiding ((.&.))
+module Main where
 
-import qualified OpenSSL.GHC.Integer as X -- this library
-import qualified GHC.Integer as Y -- builtin, usually integer-gmp
+import           Data.Bits             ((.&.))
+import           Data.Char             (intToDigit)
+import           GHC.Prim
+import           GHC.Types
+import           Numeric               (showHex)
+import           Test.Hspec            (Expectation, describe, hspec, it,
+                                        shouldBe)
+import           Test.Hspec.QuickCheck (prop)
+import           Test.QuickCheck       hiding ((.&.))
+
+import qualified GHC.Integer           as Y
+import qualified OpenSSL.GHC.Integer   as X
 
 #include "MachDeps.h"
 
