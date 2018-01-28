@@ -9,32 +9,12 @@ import qualified OpenSSL.GHC.Integer as X
 
 main :: IO ()
 main = defaultMain
-  [ env generateIntegerParams $ \params ->
-    bgroup "mkInteger"
-    [ bench "Library" $ whnf (mkIntegerBench X.mkInteger) params
-    , bench "Builtin" $ whnf (mkIntegerBench Y.mkInteger) params
+  [ bgroup "mkInteger"
+    [ bench "Library" $ whnf mkIntegerBench X.mkInteger
+    , bench "Builtin" $ whnf mkIntegerBench Y.mkInteger
     ]
   ]
 
-mkIntegerBench :: (Bool -> [Int] -> a) -> [(Bool, [Int])] -> a
-mkIntegerBench mkInteger [] = mkInteger True [1]
-mkIntegerBench mkInteger ((b, ints):ps) =
-  (mkInteger b ints) `seq` (mkIntegerBench mkInteger ps)
-
-generateIntegerParams :: IO [(Bool, [Int])]
-generateIntegerParams =
-  generate . vectorOf 1000 $ oneof [small, big]
- where
-  small = do
-    positive <- arbitrary
-    i <- arbitrary
-    pure (positive, i)
-
-  big = do
-    positive <- arbitrary
-    ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
-    pure (positive, ints)
-
--- Truncate to a positive 32bit integer (required for mkInteger)
-truncate32pos :: Int -> Int
-truncate32pos i = abs i .&. 0x7fffffff
+-- | Benchmark integer creation from 255 31bit Ints.
+mkIntegerBench :: (Bool -> [Int] -> a) -> a
+mkIntegerBench mkInteger = mkInteger True [0x00 .. 0xff]
