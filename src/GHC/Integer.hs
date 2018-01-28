@@ -35,6 +35,8 @@ wordSize = I# WORD_SIZE_IN_BITS#
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
 
+-- TODO(SN): general - add short cuts
+
 -- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
 -- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
 -- structure. Length is always a multiple of Word#, least-significant first
@@ -66,10 +68,31 @@ mkInteger nonNegative is
   f (I# i : is') = smallInteger (i `andI#` 0x7fffffff#) `orInteger` shiftLInteger (f is') 31#
 {-# NOINLINE mkInteger #-}
 
+-- | Create a (small) Integer from a single Int#.
 smallInteger :: Int# -> Integer
 smallInteger i# = S# i#
 {-# NOINLINE smallInteger #-}
 
+-- | Integer multiplication.
+timesInteger :: Integer -> Integer -> Integer
+-- TODO(SN): add short-cuts
+timesInteger (S# x#) (S# y#) =
+  case mulIntMayOflo# x# y# of
+    0# -> S# (x# *# y#)
+    _  -> S# 0# -- TODO(SN) implement timesInt2Integer x# y#
+timesInteger x@(S# _) y = timesInteger y x
+timesInteger (Bp# x) (Bp# y) = Bp# (timesBigNum x y)
+timesInteger (Bp# x) (Bn# y) = Bn# (timesBigNum x y)
+timesInteger (Bp# x) (S# y#)
+  | isTrue# (y# >=# 0#) = Bp# (timesBigNumWord x (int2Word# y#))
+  | True = Bn# (timesBigNumWord x (int2Word# (negateInt# y#)))
+timesInteger (Bn# x) (Bn# y) = Bp# (timesBigNum x y)
+timesInteger (Bn# x) (Bp# y) = Bn# (timesBigNum x y)
+timesInteger (Bn# x) (S# y#)
+  | isTrue# (y# >=# 0#) = Bn# (timesBigNumWord x (int2Word# y#))
+  | True = Bp# (timesBigNumWord x (int2Word# (negateInt# y#)))
+
+-- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
 negateInteger (Bn# n) = Bp# n
 negateInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
@@ -79,7 +102,7 @@ negateInteger (Bp# bn)
   | True = Bn# bn
 {-# NOINLINE negateInteger #-}
 
--- | Bitwise OR two Integers.
+-- | Bitwise OR of Integers.
 orInteger :: Integer -> Integer -> Integer
 -- short-cuts
 orInteger (S# 0#) y = y
@@ -265,6 +288,35 @@ minusBigNumWord neg# a w# = runS $ do
 -- size_t integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_sub_word"
   bn_sub_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
+
+-- | Multiply given BigNum with given Word#.
+timesBigNumWord :: BigNum -> Word# -> BigNum
+timesBigNumWord a@(BN# ba#) w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum (na# +# 1#)
+  copyBigNum a r
+  (I# i#) <- liftIO (bn_mul_word mbr# na# w#)
+  shrinkBigNum r i# >>= freezeBigNum
+ where
+   na# = wordsInBigNum# a
+
+-- int integer_bn_mul_word(BN_ULONG *rb, size_t rsize, BN_ULONG w)
+foreign import ccall unsafe "integer_bn_mul_word"
+  bn_mul_word :: MutableByteArray# s -> Int# -> Word# -> IO Int
+
+-- | Multiply two BigNums.
+timesBigNum :: BigNum -> BigNum -> BigNum
+timesBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+  r@(MBN# mbr#) <- newBigNum nr#
+  (I# i#) <- liftIO (bn_mul mbr# nr# a# na# b# nb#)
+  shrinkBigNum r i# >>= freezeBigNum
+ where
+   na# = wordsInBigNum# a
+   nb# = wordsInBigNum# b
+   nr# = na# +# nb#
+
+-- int integer_bn_mul(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize)
+foreign import ccall unsafe "integer_bn_mul"
+  bn_mul :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
 
 -- ** Low-level BigNum creation and manipulation
 

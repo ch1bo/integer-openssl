@@ -53,6 +53,13 @@ main = do
           let ints = map truncate32pos is
           in  showHexX (X.mkInteger b ints) === showHexY (Y.mkInteger b ints)
 
+      describe "timesInteger" $ do
+        it "can multiply Integers" $ shouldEqualHex
+          (X.timesInteger (X.mkInteger True [0x2]) (X.mkInteger True [0x3]))
+          (Y.timesInteger (Y.mkInteger True [0x2]) (Y.mkInteger True [0x3]))
+        prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          showHexX (X.timesInteger x1 x2) === showHexY (Y.timesInteger y2 y2)
+
       describe "negateInteger" $ do
         it "considers min bound Int" $
           shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
@@ -71,32 +78,6 @@ main = do
 
       prop "minusBigNumWord (wordToBigNum w) w == wordToBigNum 0" $ \(W# w#) ->
         show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)
-
-      -- it "can shift left" $ do
-      --   print (X.shiftLBigNum (X.wordToBigNum 1##) 64#)
-
-    -- it "Can create Integers" $ do
-    --     shouldEqualHex (X.mkInteger True [0xbb, 0xaa])
-    --                  (Y.mkInteger True [0xbb, 0xaa])
-    --     shouldEqualHex (X.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
-    --                  (Y.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
-    -- describe "Low level" $
-    --   it "Can add/mul" $ do
-    --     a <- X.newBN
-    --     X.setWord a 0x11##
-    --     shouldBe ("0x" ++ X.bn2hex a) "0x11"
-    --     b <- X.newBN
-    --     X.setWord b 0x02##
-    --     shouldBe ("0x" ++ X.bn2hex b) "0x02"
-    --     r <- X.addBN a b
-    --     shouldBe ("0x" ++ X.bn2hex r) "0x13"
-    --     X.freeBN r
-    --     r <- X.mulBN a b
-    --     shouldBe ("0x" ++ X.bn2hex r) "0x22"
-    --     X.freeBN r
-    --     X.freeBN a
-    --     X.freeBN b
-
 
 showHexY :: Y.Integer -> String
 showHexY i
@@ -143,24 +124,24 @@ instance Arbitrary SmallInt where
                                      , (1, pure (I# INT_MAXBOUND#))
                                      ]
 
--- | Newtype wrapper to test various Integers via QuickCheck.
-newtype Integers = Integers (X.Integer, Y.Integer) deriving Show
+-- | Datatype to test various Integers via QuickCheck.
+data Integers = Integers X.Integer Y.Integer deriving Show
 
 instance Testable Integers where
-  property (Integers (x, y)) =
+  property (Integers x y) =
     counterexample (showHexX x ++ " /= " ++ showHexY y) (showHexX x == showHexY y)
 
 instance Arbitrary Integers where
-  arbitrary = oneof [small, big]
+  arbitrary = oneof [big]
    where
     small = do
       (SmallInt (I# i)) <- arbitrary
-      pure $ Integers (X.smallInteger i, Y.smallInteger i)
+      pure $ Integers (X.smallInteger i) (Y.smallInteger i)
 
     big = do
       positive <- arbitrary
       ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
-      pure $ Integers (X.mkInteger positive ints, Y.mkInteger positive ints)
+      pure $ Integers (X.mkInteger positive ints) (Y.mkInteger positive ints)
 
 -- Truncate to a positive 32bit integer (required for mkInteger)
 truncate32pos :: Int -> Int
