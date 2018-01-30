@@ -20,21 +20,30 @@ source-repository head
   type: git
   location: https://github.com/ch1bo/integer-openssl
 
+flag redefine-unit-id
+  description: Rewrite package name without version, used for usage in ghc
+  default:     True
+
+flag integer-simple
+  description: Test and benchmark against integer-simple package instead of integer-gmp
+  default:     False
+
 library
   default-language: Haskell2010
   hs-source-dirs: src/
-  build-depends: ghc-prim ^>= 0.5.1.0
   exposed-modules: GHC.Integer
-  -- ghc-options: -this-unit-id integer-openssl -- TODO(SN): this-unit-id drops version info and is probably required when integrating with ghc
-
+  build-depends: ghc-prim ^>= 0.5.1.0
   extra-libraries: crypto
   includes: openssl/bn.h
   c-sources: wrappers.c
 
+  if flag(redefine-unit-id)
+    ghc-options: -this-unit-id integer-openssl
+
+-- Internal helper library to re-export GHC.Integer module
 library integer-openssl-internal
   default-language: Haskell2010
   build-depends: integer-openssl
-  -- Re-export to distinguish in tests
   reexported-modules: GHC.Integer as OpenSSL.GHC.Integer
 
 test-suite integer-openssl-test
@@ -47,8 +56,12 @@ test-suite integer-openssl-test
                , ghc-prim
                , hspec
                , integer-openssl-internal
-               , integer-simple
                , QuickCheck
+
+  if flag(integer-simple)
+    build-depends: integer-simple
+  else
+    build-depends: integer-gmp
 
 benchmark integer-openssl-bench
   type: exitcode-stdio-1.0
@@ -60,4 +73,8 @@ benchmark integer-openssl-bench
                , ghc-prim
                , criterion
                , integer-openssl-internal
-               , integer-simple
+
+  if flag(integer-simple)
+    build-depends: integer-simple
+  else
+    build-depends: integer-gmp

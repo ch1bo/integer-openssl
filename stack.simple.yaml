@@ -6,6 +6,9 @@ flags:
     integer-gmp: false
   integer-logarithms:
     integer-gmp: false
+  integer-openssl:
+    redefine-unit-id: false
+    integer-simple: true
   scientific:
     integer-simple: true
   text:

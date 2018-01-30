@@ -1,0 +1,6 @@
+resolver: lts-10.1
+packages:
+- .
+flags:
+  integer-openssl:
+    redefine-unit-id: false
