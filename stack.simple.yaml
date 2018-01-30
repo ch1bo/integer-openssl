@@ -1,4 +1,7 @@
 resolver: lts-10.1
+# Use a custom built ghc as no prebuilt linux integer-simple build is available
+#ghc-variant: integersimple
+system-ghc: true
 packages:
 - .
 flags:

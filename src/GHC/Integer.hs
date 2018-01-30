@@ -310,9 +310,24 @@ timesBigNum a@(BN# a#) b@(BN# b#) = runS $ do
   (I# i#) <- liftIO (bn_mul mbr# nr# a# na# b# nb#)
   shrinkBigNum r i# >>= freezeBigNum
  where
-   na# = wordsInBigNum# a
-   nb# = wordsInBigNum# b
-   nr# = na# +# nb#
+  na# = wordsInBigNum# a
+  nb# = wordsInBigNum# b
+
+  -- OpenSSL's BN_mul requires result BigNum to be big enough (bn_mul.c:553ff)
+  nr# = case isTrue# (na# >=# nb#) of
+    True  -> calculateSize na#
+    False -> calculateSize nb#
+
+  calculateSize n# =
+    let j = lowerPowerTwo# n#
+        k = j +# j
+    in case isTrue# (k ># n#) of
+      True -> k *# 4#
+      False -> k *# 2#
+
+  lowerPowerTwo# i# = 1# `uncheckedIShiftL#` (numBitsWord# (int2Word# i#) -# 1#)
+
+  numBitsWord# w# = WORD_SIZE_IN_BITS# -# (word2Int# (clz# w#))
 
 -- int integer_bn_mul(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize)
 foreign import ccall unsafe "integer_bn_mul"
