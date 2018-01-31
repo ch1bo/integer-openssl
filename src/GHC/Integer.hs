@@ -35,7 +35,9 @@ wordSize = I# WORD_SIZE_IN_BITS#
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
 
--- TODO(SN): general - add short cuts
+-- TODO(SN): general:
+--  - add short cuts
+--  - look into lazyness (bang patterns)
 
 -- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
 -- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
@@ -75,7 +77,12 @@ smallInteger i# = S# i#
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
--- TODO(SN): add short-cuts
+timesInteger _ (S# 0#) = S# 0#
+timesInteger (S# 0#) _ = S# 0#
+timesInteger x (S# 1#) = x
+timesInteger (S# 1#) y = y
+timesInteger x (S# -1#) = negateInteger x
+timesInteger (S# -1#) y = negateInteger y
 timesInteger (S# x#) (S# y#) =
   case mulIntMayOflo# x# y# of
     0# -> S# (x# *# y#)
@@ -292,12 +299,13 @@ foreign import ccall unsafe "integer_bn_sub_word"
 -- | Multiply given BigNum with given Word#.
 timesBigNumWord :: BigNum -> Word# -> BigNum
 timesBigNumWord a@(BN# ba#) w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum (na# +# 1#)
+  r@(MBN# mbr#) <- newBigNum nr#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_mul_word mbr# na# w#)
+  (I# i#) <- liftIO (bn_mul_word mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
-   na# = wordsInBigNum# a
+  na# = wordsInBigNum# a
+  nr# = na# +# 1#
 
 -- int integer_bn_mul_word(BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_mul_word"

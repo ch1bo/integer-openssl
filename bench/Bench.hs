@@ -24,8 +24,8 @@ main = defaultMain
     ]
   , bgroup "timesInteger"
     [ bgroup "small"
-      [ bench "library" $ whnf timesIntegerX (Small 123, Small 42)
-      , bench "builtin" $ whnf timesIntegerY (Small 123, Small 42)
+      [ bench "library" $ whnf timesIntegerX (small, small_)
+      , bench "builtin" $ whnf timesIntegerY (small, small_)
       ]
     , bgroup "128bit"
       [ bench "library" $ whnf timesIntegerX (big128, big128_)
@@ -38,25 +38,23 @@ main = defaultMain
     ]
   ]
  where
-  big128 = Big False [0x1, 0x1, 0x1, 0x1, 0xf] -- 4*31+4 = 128
-  big128_ = Big True [0x2, 0x1, 0x1, 0x1, 0xf]
-  big4096 = Big True $ [0x0..0x84] ++ [0xf] -- 132*31+4 = 4096
-  big4096_ = Big False $ [0x1..0x85] ++ [0xf]
-  timesIntegerX = timesIntegerBench X.mkInteger X.smallInteger X.timesInteger
-  timesIntegerY = timesIntegerBench Y.mkInteger Y.smallInteger Y.timesInteger
+  small = (True, [123])
+  small_ = (True, [42])
+  big128 = (False, [0x1, 0x1, 0x1, 0x1, 0xf]) -- 4*31+4 = 128
+  big128_ = (True, [0x2, 0x1, 0x1, 0x1, 0xf])
+  big4096 = (True, [0x0..0x84] ++ [0xf]) -- 132*31+4 = 4096
+  big4096_ = (False, [0x1..0x85] ++ [0xf])
 
-data IntegerBench = Small Int
-                  | Big Bool [Int]
+  timesIntegerX = timesIntegerBench X.mkInteger X.timesInteger
+  timesIntegerY = timesIntegerBench Y.mkInteger Y.timesInteger
+
+type IntegerBench = (Bool, [Int])
 
 -- | Benchmark big integer creation.
-mkIntegerBench :: (Bool -> [Int] -> a) -> IntegerBench -> a
-mkIntegerBench mkInteger (Big p is) = mkInteger p is
+mkIntegerBench :: (Bool -> [Int] -> a) -> (Bool, [Int]) -> a
+mkIntegerBench mkInteger (p, is) = mkInteger p is
 
-timesIntegerBench :: (Bool -> [Int] -> a) -> (Int# -> a) -> (a -> a -> a)
+timesIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> a)
                   -> (IntegerBench, IntegerBench) -> a
-timesIntegerBench mkInteger smallInteger timesInteger = go
- where
-  go (Small (I# i1#), Small (I# i2#)) = timesInteger (smallInteger i1#) (smallInteger i2#)
-  go (Big p is, Small (I# i#)) = timesInteger (mkInteger p is) (smallInteger i#)
-  go (Small (I# i#), Big p is) = timesInteger (smallInteger i#) (mkInteger p is)
-  go (Big p is, Big p2 is2) = timesInteger (mkInteger p is) (mkInteger p2 is2)
+timesIntegerBench mkInteger timesInteger ((p, is), (p2, is2)) =
+  timesInteger (mkInteger p is) (mkInteger p2 is2)
