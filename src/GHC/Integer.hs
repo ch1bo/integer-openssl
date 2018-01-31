@@ -70,10 +70,28 @@ mkInteger nonNegative is
   f (I# i : is') = smallInteger (i `andI#` 0x7fffffff#) `orInteger` shiftLInteger (f is') 31#
 {-# NOINLINE mkInteger #-}
 
--- | Create a (small) Integer from a single Int#.
+-- | Create an Integer from a single Int#.
 smallInteger :: Int# -> Integer
 smallInteger i# = S# i#
 {-# NOINLINE smallInteger #-}
+
+-- | Create a (positive) Integer from a single Word#.
+wordToInteger :: Word# -> Integer
+wordToInteger w#
+  | isTrue# (i# >=# 0#) = S# i#
+  | True = Bp# (wordToBigNum w#)
+  where
+    i# = word2Int# w#
+{-# NOINLINE wordToInteger #-}
+
+-- | Create a (negative) Integer from a single Word#.
+wordToNegInteger :: Word# -> Integer
+wordToNegInteger w#
+  | isTrue# (i# <=# 0#) = S# i#
+  | True = Bn# (wordToBigNum w#)
+  where
+    i# = negateInt# (word2Int# w#)
+-- inlinable as only internally used
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
@@ -86,7 +104,7 @@ timesInteger (S# -1#) y = negateInteger y
 timesInteger (S# x#) (S# y#) =
   case mulIntMayOflo# x# y# of
     0# -> S# (x# *# y#)
-    _  -> S# 0# -- TODO(SN) implement timesInt2Integer x# y#
+    _  -> timesInt2Integer x# y#
 timesInteger x@(S# _) y = timesInteger y x
 timesInteger (Bp# x) (Bp# y) = Bp# (timesBigNum x y)
 timesInteger (Bp# x) (Bn# y) = Bn# (timesBigNum x y)
@@ -96,8 +114,28 @@ timesInteger (Bp# x) (S# y#)
 timesInteger (Bn# x) (Bn# y) = Bp# (timesBigNum x y)
 timesInteger (Bn# x) (Bp# y) = Bn# (timesBigNum x y)
 timesInteger (Bn# x) (S# y#)
-  | isTrue# (y# >=# 0#) = Bn# (timesBigNumWord x (int2Word# y#))
+  | isTrue# (y# >=# 0#) =  Bn# (timesBigNumWord x (int2Word# y#))
   | True = Bp# (timesBigNumWord x (int2Word# (negateInt# y#)))
+
+-- | Construct 'Integer' from the product of two 'Int#'s
+timesInt2Integer :: Int# -> Int# -> Integer
+timesInt2Integer x# y# =
+  case (# isTrue# (x# >=# 0#), isTrue# (y# >=# 0#) #) of
+    (# False, False #) -> case timesWord2# (int2Word# (negateInt# x#)) (int2Word# (negateInt# y#)) of
+      (# 0##, l #) -> inline wordToInteger l
+      (# h, l #) -> Bp# (wordToBigNum2 h l)
+
+    (# True, False #) -> case timesWord2# (int2Word# x#) (int2Word# (negateInt# y#)) of
+      (# 0##, l #) -> wordToNegInteger l
+      (# h, l #) -> Bn# (wordToBigNum2 h l)
+
+    (# False, True #) -> case timesWord2# (int2Word# (negateInt# x#)) (int2Word# y#) of
+      (# 0##, l #) -> wordToNegInteger l
+      (# h, l #) -> Bn# (wordToBigNum2 h l)
+
+    (# True, True #) -> case timesWord2# (int2Word# x#) (int2Word# y#) of
+      (# 0##, l #) -> inline wordToInteger l
+      (# h, l #) -> Bp# (wordToBigNum2 h l)
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -159,6 +197,16 @@ wordToBigNum :: Word# -> BigNum
 wordToBigNum w# = runS $ do
   mbn <- newBigNum 1#
   writeBigNum mbn 0# w#
+  freezeBigNum mbn
+
+-- | Create a BigNum from two Word#.
+wordToBigNum2 :: Word# -- ^ High word
+              -> Word# -- ^ low word
+              -> BigNum
+wordToBigNum2 h# l# = runS $ do
+  mbn <- newBigNum 2#
+  writeBigNum mbn 0# l#
+  writeBigNum mbn 1# h#
   freezeBigNum mbn
 
 -- | Truncate a BigNum to a single Word#.
