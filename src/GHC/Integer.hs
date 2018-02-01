@@ -137,6 +137,11 @@ timesInt2Integer x# y# =
       (# 0##, l #) -> inline wordToInteger l
       (# h, l #) -> Bp# (wordToBigNum2 h l)
 
+-- | Integer division rounded to zero, calculating 'quotInteger' and
+-- 'remInteger'. Divisor must be non-zero or a division-by-zero will be raised.
+quotRemInteger :: Integer -> Integer -> (# Integer, Integer #)
+quotRemInteger i d = undefined -- TODO WIP
+
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
 negateInteger (Bn# n) = Bp# n

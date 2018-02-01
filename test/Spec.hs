@@ -1,6 +1,7 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE UnboxedTuples       #-}
 
 module Main where
 
@@ -12,7 +13,7 @@ import           Numeric               (showHex)
 import           Test.Hspec            (Expectation, describe, hspec, it,
                                         shouldBe)
 import           Test.Hspec.QuickCheck (prop)
-import           Test.QuickCheck       hiding ((.&.))
+import           Test.QuickCheck       hiding ((.&.), NonZero)
 
 import qualified GHC.Integer           as Y
 import qualified OpenSSL.GHC.Integer   as X
@@ -54,16 +55,15 @@ main = do
           in  X.mkInteger b ints <<>> Y.mkInteger b ints
 
       describe "timesInteger" $ do
-        it "can multiply Integers" $ do
-          -- shouldEqualHex
-          --   (X.timesInteger (X.mkInteger True [0x2]) (X.mkInteger True [0x3]))
-          --   (Y.timesInteger (Y.mkInteger True [0x2]) (Y.mkInteger True [0x3]))
-          shouldEqualHex
-            (X.timesInteger (X.mkInteger True [0]) (X.mkInteger True [1]))
-            (Y.timesInteger (Y.mkInteger True [0]) (Y.mkInteger True [1]))
-
         prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
           X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
+
+      describe "quotRemInteger" $ do
+        -- division by zero cannot be tested properly here
+        prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
+          let (# xq, qr #) = X.quotRemInteger x1 x2
+              (# yq, yr #) = Y.quotRemInteger y1 y2
+          in xq <<>> yq
 
       describe "negateInteger" $ do
         it "considers min bound Int" $
@@ -119,12 +119,17 @@ instance Show X.BigNum where
 shouldEqualHex :: X.Integer -> Y.Integer -> Expectation
 shouldEqualHex x y = showHexX x `shouldBe` showHexY y
 
--- | Newtype wrapper to generate minbound/maxbound values more often in
--- QuickCheck Arbitrary instance.
+(<<>>) :: X.Integer -> Y.Integer -> Property
+x <<>> y =
+  counterexample (showHexX x ++ " /= " ++ showHexY y) (showHexX x == showHexY y)
+
+-- | Newtype to generate minbound/maxbound values more often in QuickCheck
+-- Arbitrary instance.
 newtype SmallInt = SmallInt Int deriving Show
 
 instance Arbitrary SmallInt where
   arbitrary = SmallInt <$> frequency [ (4, arbitrary)
+                                     , (1, pure 0)
                                      , (1, pure (I# INT_MINBOUND#))
                                      , (1, pure (I# INT_MAXBOUND#))
                                      ]
@@ -132,18 +137,26 @@ instance Arbitrary SmallInt where
 -- | Datatype to test various Integers via QuickCheck.
 data Integers = Integers X.Integer Y.Integer deriving Show
 
-(<<>>) :: X.Integer -> Y.Integer -> Integers
-x <<>> y = Integers x y
-
-instance Testable Integers where
-  property (Integers x y) =
-    counterexample (showHexX x ++ " /= " ++ showHexY y) (showHexX x == showHexY y)
-
 instance Arbitrary Integers where
-  arbitrary = do
-    positive <- arbitrary
-    ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
-    pure $ Integers (X.mkInteger positive ints) (Y.mkInteger positive ints)
+  arbitrary = oneof [small, big]
+   where
+    small = do
+      (SmallInt (I# i)) <- arbitrary
+      pure $ Integers (X.smallInteger i) (Y.smallInteger i)
+
+    big = do
+      positive <- arbitrary
+      ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
+      pure $ Integers (X.mkInteger positive ints) (Y.mkInteger positive ints)
+
+-- | Newtype to generate non-zero integer Arbitrary instance.
+newtype NonZeroIntegers = NonZero Integers deriving Show
+
+instance Arbitrary NonZeroIntegers where
+  arbitrary = NonZero <$> arbitrary `suchThat` notZero
+   where
+    notZero (Integers (X.S# 0#) _) = False
+    notZero (Integers _ y) = y /= 0
 
 -- Truncate to a positive 32bit integer (required for mkInteger)
 truncate32pos :: Int -> Int
