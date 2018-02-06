@@ -140,7 +140,44 @@ timesInt2Integer x# y# =
 -- | Integer division rounded to zero, calculating 'quotInteger' and
 -- 'remInteger'. Divisor must be non-zero or a division-by-zero will be raised.
 quotRemInteger :: Integer -> Integer -> (# Integer, Integer #)
-quotRemInteger i d = undefined -- TODO WIP
+quotRemInteger n (S# 1#) = (# n, S# 0# #)
+quotRemInteger n (S# -1#) =
+  let !q = negateInteger n
+  in  (# q, S# 0# #)
+quotRemInteger _ (S# 0#) = -- will raise division by zero
+  (# S# (quotInt# 0# 0#), S# (remInt# 0# 0#) #)
+quotRemInteger (S# 0#) _ = (# S# 0#, S# 0# #)
+quotRemInteger (S# n#) (S# d#) =
+  let (# q#, r# #) = quotRemInt# n# d#
+  in  (# S# q#, S# r# #)
+quotRemInteger (Bp# n) (Bp# d) =
+  let (# q, r #) = quotRemBigNum n d
+  in  (# bigNumToInteger q, bigNumToInteger r #)
+quotRemInteger (Bp# n) (Bn# d) =
+  let (# q, r #) = quotRemBigNum n d
+  in  (# bigNumToNegInteger q, bigNumToInteger r #)
+quotRemInteger (Bn# n) (Bn# d) =
+  let (# q, r #) = quotRemBigNum n d
+  in  (# bigNumToInteger q, bigNumToNegInteger r #)
+quotRemInteger (Bn# n) (Bp# d) =
+  let (# q, r #) = quotRemBigNum n d
+  in  (# bigNumToNegInteger q, bigNumToNegInteger r #)
+quotRemInteger (Bp# n) (S# d#)
+  | isTrue# (d# >=# 0#) = let (# q, r# #) = quotRemBigNumWord n (int2Word# d#)
+                          in  (# bigNumToInteger q, inline wordToInteger r# #)
+  | True = let (# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
+           in  (# bigNumToNegInteger q, inline wordToInteger r# #)
+quotRemInteger (Bn# n) (S# d#)
+  | isTrue# (d# >=# 0#) = let (# q, r# #) = quotRemBigNumWord n (int2Word# d#)
+                          in  (# bigNumToNegInteger q, inline wordToNegInteger r# #)
+  | True = let (# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
+           in  (# bigNumToInteger q, inline wordToNegInteger r# #)
+quotRemInteger i@(S# _) (Bn# d) = (# S# 0#, i #) -- since i < d
+quotRemInteger i@(S# i#) (Bp# d) -- need to account for (S# minBound)
+    | isTrue# (i# ># 0#) = (# S# 0#, i #)
+    | isTrue# (gtBigNumWord# d (int2Word# (negateInt# i#))) = (# S# 0#, i #)
+    | True {- abs(i) == d -} = (# S# -1#, S# 0# #)
+{-# NOINLINE quotRemInteger #-}
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -234,14 +271,21 @@ bigNumToNegInteger bn
   where
     i# = negateInt# (word2Int# (bigNumToWord bn))
 
+-- ** Comparisons
+
+-- | Get number of Word# in BigNum. See newBigNum for shift explanation.
+wordsInBigNum# :: BigNum -> Int#
+wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
+
 -- | Return 1# iff BigNum holds one Word# equal to given Word#.
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
   (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` w#)
 
--- | Get number of Word# in BigNum. See newBigNum for shift explanation.
-wordsInBigNum# :: BigNum -> Int#
-wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
+-- | Return 1# iff BigNum is greater than a given Word#.
+gtBigNumWord# :: BigNum -> Word# -> Int#
+gtBigNumWord# bn w# =
+  (wordsInBigNum# bn ># 1#) `orI#` (bigNumToWord bn `gtWord#` w#)
 
 -- ** Bit-operations
 
@@ -262,7 +306,7 @@ orBigNum x@(BN# x#) y@(BN# y#)
     mapWordArray# a# b# mba# or# m#
     case isTrue# (n# ==# m#) of
       False -> copyWordArray# a# m# mba# m# (n# -# m#)
-      True  -> return# ()
+      True  -> return ()
     freezeBigNum mbn
 
 -- | Bitwise AND of two BigNum.
@@ -394,6 +438,36 @@ timesBigNum a@(BN# a#) b@(BN# b#) = runS $ do
 foreign import ccall unsafe "integer_bn_mul"
   bn_mul :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
 
+-- | Divide a BigNum by a Word#, returning the quotient and a remainder (rounded
+-- to zero). The divisor must not be 0##.
+quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
+quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
+quotRemBigNumWord a 1## = (# a, 0## #)
+quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (W# r#)) -> (# q, r# #)
+ where
+  na# = wordsInBigNum# a
+  nr# = na# +# 1#
+
+  divWord s = do
+    case newBigNum nr# s of { (# s1, r@(MBN# mbr#) #) ->
+    case copyBigNum a r s1 of { (# s2, () #) ->
+    case newByteArray# WORD_SIZE_IN_BYTES# s2 of { (# s3, mbrem# #) ->
+    case liftIO (bn_div_word mbr# nr# w# mbrem#) s3 of { (# s4, (I# i#) #) ->
+    case readWordArray# mbrem# 0# s4 of { (# s5, rem# #) ->
+    case shrinkBigNum r i# s5 of { (# s6, r' #) ->
+    case freezeBigNum r' s6 of { (# s7, r'' #) ->
+    (# s7, (r'', (W# rem#)) #)
+    }}}}}}}
+
+-- int integer_bn_div_word(BN_ULONG *rb, size_t rsize, BN_ULONG w, BN_ULONG *rem)
+foreign import ccall unsafe "integer_bn_div_word"
+  bn_div_word :: MutableByteArray# s -> Int# -> Word# -> MutableByteArray# s -> IO Int
+
+-- | Divide a BigNum by another BigNum, returning the quotient and a remainder
+-- (rounded to zero). The divisor must not be 0##.
+quotRemBigNum :: BigNum -> BigNum -> (# BigNum, BigNum #)
+quotRemBigNum n d = (# n, n #) -- TODO WIP
+
 -- ** Low-level BigNum creation and manipulation
 
 -- | Create a MutableBigNum with given count of words.
@@ -424,6 +498,7 @@ shrinkBigNum mbn@(MBN# mba#) n# s
 writeBigNum :: MutableBigNum s -> Int# -> Word# -> S s ()
 writeBigNum (MBN# mba#) i# w# s =
   let s' = writeWordArray# mba# i# w# s
+
   in  (# s', () #)
 
 -- | Copy magnitude from given BigNum into MutableBigNum.
@@ -437,6 +512,7 @@ copyBigNum a@(BN# ba#) (MBN# mbb#) =
 copyWordArray# :: ByteArray# -> Int# -> MutableByteArray# s -> Int# -> Int# -> S s ()
 copyWordArray# src srcOffset dst dstOffset len s =
   let s' = copyByteArray# src srcOffsetBytes dst dstOffsetBytes lenBytes s
+
   in  (# s', () #)
  where
   srcOffsetBytes = srcOffset `uncheckedIShiftL#` WORD_SHIFT#
@@ -575,13 +651,9 @@ f $ x = f x
 (>>) :: S s a -> S s b -> S s b
 (>>) m k = \s -> case m s of (# s', _ #) -> k s'
 
-{-# INLINE svoid #-}
-svoid :: (State# s -> State# s) -> S s ()
-svoid m0 = \s -> case m0 s of s' -> (# s', () #)
-
-{-# INLINE return# #-}
-return# :: a -> S s a
-return# a = \s -> (# s, a #)
+{-# INLINE return #-}
+return :: a -> S s a
+return a = \s -> (# s, a #)
 
 {-# INLINE liftIO #-}
 liftIO :: IO a -> S RealWorld a
@@ -593,17 +665,13 @@ runS m = case runRW# m of (# _, a #) -> a
 
 -- stupid hack
 fail :: [Char] -> S s a
-fail s = return# (raise# s)
+fail s = return (raise# s)
 
 -- ** From Base
 
 {-# INLINE (.) #-}
 (.) :: (b -> c) -> (a -> b) -> a -> c
 f . g = \x -> f (g x)
-
-{-# INLINE return #-}
-return :: a -> IO a
-return a = IO $ \s -> (# s, a #)
 
 -- ** From GHC.Err:
 

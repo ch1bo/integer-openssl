@@ -56,10 +56,9 @@ int integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   return r.top;
 }
 
-// Unfortunately the low-level functions are not available
-// BN_ULONG bn_mul_words(BN_ULONG *rp, const BN_ULONG *ap, int num, BN_ULONG w);
 int integer_bn_mul_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   U_BIGNUM(r, rb, rsize);
+  r.top = rsize - 1; // rsize is +1 of actual used (see timesBigNumWord)
   int ret = BN_mul_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);
@@ -76,5 +75,15 @@ int integer_bn_mul(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_UL
   BN_CTX_free(ctx);
   assert(ret == 1);
   assert(r.d == rb);
+  return r.top;
+}
+
+int integer_bn_div_word(BN_ULONG *rb, size_t rsize, BN_ULONG w, BN_ULONG *rem) {
+  U_BIGNUM(r, rb, rsize);
+  r.top = rsize - 1; // rsize is +1 of actual used (see quotRemBigNumWord)
+  BN_ULONG ret = BN_div_word(&r, w);
+  assert(ret != -1);
+  assert(r.d == rb);
+  *rem = ret;
   return r.top;
 }
