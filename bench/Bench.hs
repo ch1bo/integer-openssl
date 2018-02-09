@@ -1,5 +1,5 @@
-{-# LANGUAGE BangPatterns #-}
-{-# LANGUAGE MagicHash    #-}
+{-# LANGUAGE MagicHash     #-}
+{-# LANGUAGE UnboxedTuples #-}
 
 module Main where
 
@@ -36,6 +36,20 @@ main = defaultMain
       , bench "builtin" $ whnf timesIntegerY (big4096, big4096_)
       ]
     ]
+  , bgroup "quotRemInteger"
+    [ bgroup "small"
+      [ bench "library" $ whnf quotRemIntegerX (small, small_)
+      , bench "builtin" $ whnf quotRemIntegerY (small, small_)
+      ]
+    , bgroup "128bit"
+      [ bench "library" $ whnf quotRemIntegerX (big128_, big128)
+      , bench "builtin" $ whnf quotRemIntegerY (big128_, big128)
+      ]
+    , bgroup "4096bit"
+      [ bench "library" $ whnf quotRemIntegerX (big4096_, big4096)
+      , bench "builtin" $ whnf quotRemIntegerY (big4096_, big4096)
+      ]
+    ]
   ]
  where
   small = (True, [123])
@@ -48,6 +62,9 @@ main = defaultMain
   timesIntegerX = timesIntegerBench X.mkInteger X.timesInteger
   timesIntegerY = timesIntegerBench Y.mkInteger Y.timesInteger
 
+  quotRemIntegerX = quotRemIntegerBench X.mkInteger X.quotRemInteger
+  quotRemIntegerY = quotRemIntegerBench Y.mkInteger Y.quotRemInteger
+
 type IntegerBench = (Bool, [Int])
 
 -- | Benchmark big integer creation.
@@ -58,3 +75,8 @@ timesIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> a)
                   -> (IntegerBench, IntegerBench) -> a
 timesIntegerBench mkInteger timesInteger ((p, is), (p2, is2)) =
   timesInteger (mkInteger p is) (mkInteger p2 is2)
+
+quotRemIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> (# a, a #))
+                  -> (IntegerBench, IntegerBench) -> (a, a)
+quotRemIntegerBench mkInteger quotRemInteger ((p, is), (p2, is2)) =
+  case quotRemInteger (mkInteger p is) (mkInteger p2 is2) of (# q, r #) -> (q, r)
