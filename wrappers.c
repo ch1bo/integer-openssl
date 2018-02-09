@@ -6,6 +6,7 @@
 // relocated by "expand" functions as that memory is managed by the Haskell RTS.
 // Furthermore, most functions return the number of actually used words on the
 // modified word array.
+// TODO(SN): update description
 
 // Define BIGNUM aka bignum_st as bn_lcl.h is internal
 typedef struct bignum_st BIGNUM;
@@ -78,12 +79,38 @@ int integer_bn_mul(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_UL
   return r.top;
 }
 
-int integer_bn_div_word(BN_ULONG *rb, size_t rsize, BN_ULONG w, BN_ULONG *rem) {
-  U_BIGNUM(r, rb, rsize);
-  r.top = rsize - 1; // rsize is +1 of actual used (see quotRemBigNumWord)
+int integer_bn_div_word(BN_ULONG *qb, size_t qsize, BN_ULONG w, int32_t *qtop) {
+  U_BIGNUM(r, qb, qsize);
+  r.top = qsize - 1; // qsize is +1 of actual used (see quotRemBigNumWord)
+  // printf("BN_div_word %s %lu %p\n", BN_bn2dec(&r), w, qtop);
   BN_ULONG ret = BN_div_word(&r, w);
   assert(ret != -1);
-  assert(r.d == rb);
-  *rem = ret;
-  return r.top;
+  assert(r.d == qb);
+  *qtop = r.top;
+  return ret;
+}
+
+int integer_bn_div(BN_ULONG *qb, size_t qsize,
+                   BN_ULONG *remb, size_t remsize,
+                   BN_ULONG *ab, size_t asize,
+                   BN_ULONG *db, size_t dsize,
+                   int32_t* qtop, int32_t* remtop) {
+  U_BIGNUM(q, qb, qsize);
+  q.top = qsize - 1; // qsize is +1 of actual used (see quotRemBigNum)
+  U_BIGNUM(rem, remb, remsize);
+  U_BIGNUM(a, ab, asize);
+  U_BIGNUM(d, db, dsize);
+  BN_CTX* ctx = BN_CTX_new();
+  assert(ctx != NULL);
+  // printf("BN_div %s %s %p %p\n", BN_bn2dec(&a), BN_bn2dec(&d), qtop, remtop);
+  int ret = BN_div(&q, &rem, &a, &d, ctx);
+  BN_CTX_free(ctx);
+  assert(ret == 1);
+  assert(q.d == qb);
+  assert(rem.d == remb);
+  // printf("q: %s, r: %s\n", BN_bn2dec(&q), BN_bn2dec(&rem));
+  // printf("qtop: %d, remtop: %d\n", q.top, rem.top);
+  *qtop = q.top;
+  *remtop = rem.top;
+  return ret;
 }

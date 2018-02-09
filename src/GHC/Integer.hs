@@ -38,6 +38,7 @@ wordSize = I# WORD_SIZE_IN_BITS#
 -- TODO(SN): general:
 --  - add short cuts
 --  - look into lazyness (bang patterns)
+--  - consistent style: 'monadic' vs explict state#
 
 -- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
 -- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
@@ -349,12 +350,12 @@ shiftLBigNum x 0# = x
 shiftLBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
 shiftLBigNum a@(BN# ba#) c# = runS $ do
-  r@(MBN# mbr#) <- newBigNum nr#
-  (I# i#) <- liftIO (bn_lshift mbr# nr# ba# na# c#)
+  r@(MBN# mbq#) <- newBigNum nq#
+  (I# i#) <- liftIO (bn_lshift mbq# nq# ba# na# c#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
-  nr# = na# +# nwords# +# 1#
+  nq# = na# +# nwords# +# 1#
   nwords# = quotInt# c# WORD_SIZE_IN_BITS#
 
 -- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
@@ -443,30 +444,58 @@ foreign import ccall unsafe "integer_bn_mul"
 quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
 quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
 quotRemBigNumWord a 1## = (# a, 0## #)
-quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (W# r#)) -> (# q, r# #)
+quotRemBigNumWord a@(BN# ba#) w# = divWord
  where
   na# = wordsInBigNum# a
-  nr# = na# +# 1#
-
-  divWord s = do
-    case newBigNum nr# s of { (# s1, r@(MBN# mbr#) #) ->
-    case copyBigNum a r s1 of { (# s2, () #) ->
-    case newByteArray# WORD_SIZE_IN_BYTES# s2 of { (# s3, mbrem# #) ->
-    case liftIO (bn_div_word mbr# nr# w# mbrem#) s3 of { (# s4, (I# i#) #) ->
-    case readWordArray# mbrem# 0# s4 of { (# s5, rem# #) ->
-    case shrinkBigNum r i# s5 of { (# s6, r' #) ->
-    case freezeBigNum r' s6 of { (# s7, r'' #) ->
-    (# s7, (r'', (W# rem#)) #)
+  nq# = na# +# 1#
+  divWord =
+    case newBigNum nq# realWorld# of { (# s1, q@(MBN# mbq#) #) ->
+    case copyBigNum a q s1 of { (# s2, () #) ->
+    case newByteArray# 4# s2 of { (# s3, mbqtop# #) ->
+    case liftIO (bn_div_word mbq# nq# w# mbqtop#) s3 of { (# s4, (I# r#) #) ->
+    case readInt32Array# mbqtop# 0# s4 of { (# s5, qtop# #) ->
+    case shrinkBigNum q qtop# s5 of { (# s6, q' #) ->
+    case freezeBigNum q' s4 of { (# s5, q'' #) ->
+    (# q'', int2Word# r# #)
     }}}}}}}
 
--- int integer_bn_div_word(BN_ULONG *rb, size_t rsize, BN_ULONG w, BN_ULONG *rem)
+-- int integer_bn_div_word(BN_ULONG *qb, size_t qsize, BN_ULONG w, int32_t *qtop)
 foreign import ccall unsafe "integer_bn_div_word"
   bn_div_word :: MutableByteArray# s -> Int# -> Word# -> MutableByteArray# s -> IO Int
 
 -- | Divide a BigNum by another BigNum, returning the quotient and a remainder
 -- (rounded to zero). The divisor must not be 0##.
 quotRemBigNum :: BigNum -> BigNum -> (# BigNum, BigNum #)
-quotRemBigNum n d = (# n, n #) -- TODO WIP
+quotRemBigNum a@(BN# ba#) d@(BN# bd#) = case runS div of (q, r) -> (# q, r #)
+ where
+  na# = wordsInBigNum# a
+  nd# = wordsInBigNum# d
+  nq# = na# +# 1#
+  nr# = na#
+  div = do
+    q@(MBN# mbq#) <- newBigNum nq#
+    r@(MBN# mbqtop#) <- newBigNum nr#
+    qtopba@(BA# qtopba#) <- newByteArray 4#
+    rtopba@(BA# rtopba#) <- newByteArray 4#
+    liftIO (bn_div mbq# nq# mbqtop# nr# ba# na# bd# nd# qtopba# rtopba#)
+    (I# qtop#) <- readInt32ByteArray qtopba
+    (I# rtop#) <- readInt32ByteArray rtopba
+    q' <- shrinkBigNum q qtop# >>= freezeBigNum
+    r' <- shrinkBigNum r rtop# >>= freezeBigNum
+    return (q', r')
+
+-- int integer_bn_div(BN_ULONG *qb, size_t qsize,
+--                    BN_ULONG *remb, size_t remsize,
+--                    BN_ULONG *ab, size_t asize,
+--                    BN_ULONG *db, size_t dsize,
+--                    int32_t* qtop, int32_t* remtop)
+foreign import ccall unsafe "integer_bn_div"
+  bn_div :: MutableByteArray# s -> Int#
+         -> MutableByteArray# s -> Int#
+         -> ByteArray# -> Int#
+         -> ByteArray# -> Int#
+         -> ByteArray# -> ByteArray#
+         -> IO Int
 
 -- ** Low-level BigNum creation and manipulation
 
@@ -486,10 +515,15 @@ freezeBigNum (MBN# mba#) s =
 
 -- | Shrink a MutableBigNum the the given count of Word#.
 shrinkBigNum :: MutableBigNum s -> Int# -> S s (MutableBigNum s)
-shrinkBigNum mbn 0# s = (# s, mbn #)
-shrinkBigNum mbn@(MBN# mba#) n# s
-  | isTrue# (actual# ==# desired#) = (# s', mbn #)
-  | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mbn #)
+shrinkBigNum mba@(MBN# mba#) 0# s =
+  -- BigNum always holds min one word, but clear it in this case
+  case shrinkBigNum mba 1# s of { (# s1, mba' #) ->
+  case writeWordArray# mba# 0# 0## s1 of { s2 ->
+  (# s2, mba #)
+  }}
+shrinkBigNum mba@(MBN# mba#) n# s
+  | isTrue# (actual# ==# desired#) = (# s', mba #)
+  | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mba #)
  where
   !(# s', actual# #) = getSizeofMutableByteArray# mba# s
   desired# = n# `uncheckedIShiftL#` WORD_SHIFT#
@@ -498,7 +532,6 @@ shrinkBigNum mbn@(MBN# mba#) n# s
 writeBigNum :: MutableBigNum s -> Int# -> Word# -> S s ()
 writeBigNum (MBN# mba#) i# w# s =
   let s' = writeWordArray# mba# i# w# s
-
   in  (# s', () #)
 
 -- | Copy magnitude from given BigNum into MutableBigNum.
@@ -508,11 +541,23 @@ copyBigNum a@(BN# ba#) (MBN# mbb#) =
 
 -- * ByteArray# utilities
 
+data ByteArray = BA# ByteArray#
+
+-- | Helper to allocate a freezed block of memory and return a lifted type for
+-- easier handling.
+newByteArray :: Int# -> S s ByteArray
+newByteArray i# s =
+  let (# s1, mba# #) = newPinnedByteArray# i# s
+      (# s2, ba# #) = unsafeFreezeByteArray# mba# s1
+  in  (# s2, BA# ba# #)
+
+readInt32ByteArray :: ByteArray -> S s Int
+readInt32ByteArray (BA# ba#) s = (# s, I# (indexInt32Array# ba# 0#) #)
+
 -- | Copy multiples of Word# between ByteArray#s with offsets in words.
 copyWordArray# :: ByteArray# -> Int# -> MutableByteArray# s -> Int# -> Int# -> S s ()
 copyWordArray# src srcOffset dst dstOffset len s =
   let s' = copyByteArray# src srcOffsetBytes dst dstOffsetBytes lenBytes s
-
   in  (# s', () #)
  where
   srcOffsetBytes = srcOffset `uncheckedIShiftL#` WORD_SHIFT#
