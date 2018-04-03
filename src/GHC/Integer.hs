@@ -16,8 +16,14 @@ import GHC.Magic
 import GHC.Prim
 import GHC.Types
 
-wordSize :: Int
-wordSize = I# WORD_SIZE_IN_BITS#
+-- * Integer functions
+
+-- TODO(SN): general:
+--  - add short cuts
+--  - look into lazyness (bang patterns)
+--  - consistent style: 'monadic' vs explict state#
+--  - 32-bit support
+--  - additional Integer operations: gcdInteger, lcmInteger, bitInteger
 
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
@@ -35,20 +41,6 @@ wordSize = I# WORD_SIZE_IN_BITS#
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
 
--- TODO(SN): general:
---  - add short cuts
---  - look into lazyness (bang patterns)
---  - consistent style: 'monadic' vs explict state#
-
--- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
--- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
--- structure. Length is always a multiple of Word#, least-significant first
--- (BN_BITS2 == WORD_SIZE_IN_BITS).
-data BigNum = BN# ByteArray#
-
--- | Mutable variant of BigNum for internal use.
-data MutableBigNum s = MBN# (MutableByteArray# s)
-
 data Integer = S# !Int#
                -- ^ small integer
              | Bp# {-# UNPACK #-} !BigNum
@@ -56,8 +48,9 @@ data Integer = S# !Int#
              | Bn# {-# UNPACK #-} !BigNum
                -- ^ negative bignum, < minbound(Int)
 
+-- ** Creation and conversion
+
 -- | Construct 'Integer' value from list of 'Int's.
-             --
 -- This function is used by GHC for constructing 'Integer' literals.
 mkInteger :: Bool   -- ^ sign of integer ('True' if non-negative)
           -> [Int]  -- ^ absolute value expressed in 31 bit chunks, least
@@ -93,6 +86,33 @@ wordToNegInteger w#
   where
     i# = negateInt# (word2Int# w#)
 -- inlinable as only internally used
+
+-- TODO integerToWord :: Integer -> Word#
+-- TODO integerToInt :: Integer -> Int#
+-- TODO floatFromInteger :: Integer -> Float#
+-- TODO doubleFromInteger :: Integer -> Double#
+-- TODO encodeFloatInteger :: Integer -> Int# -> Float#
+-- TODO encodeDoubleInteger :: Integer -> Int# -> Double#
+-- TODO decodeDoubleInteger :: Double# -> (# Integer, Int# #)
+
+-- ** Arithmetic operations
+
+-- TODO plusInteger :: Integer -> Integer -> Integer
+-- TODO minusInteger :: Integer -> Integer -> Integer
+
+-- | Switch sign of Integer.
+negateInteger :: Integer -> Integer
+negateInteger (Bn# n) = Bp# n
+negateInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
+negateInteger (S# i#) = S# (negateInt# i#)
+negateInteger (Bp# bn)
+  | isTrue# (eqBigNumWord# bn ABS_INT_MINBOUND##) = S# INT_MINBOUND#
+  | True = Bn# bn
+{-# NOINLINE negateInteger #-}
+
+-- TODO absInteger :: Integer -> Integer
+
+-- TODO signumInteger :: Integer -> Integer
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
@@ -180,15 +200,17 @@ quotRemInteger i@(S# i#) (Bp# d) -- need to account for (S# minBound)
     | True {- abs(i) == d -} = (# S# -1#, S# 0# #)
 {-# NOINLINE quotRemInteger #-}
 
--- | Switch sign of Integer.
-negateInteger :: Integer -> Integer
-negateInteger (Bn# n) = Bp# n
-negateInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
-negateInteger (S# i#) = S# (negateInt# i#)
-negateInteger (Bp# bn)
-  | isTrue# (eqBigNumWord# bn ABS_INT_MINBOUND##) = S# INT_MINBOUND#
-  | True = Bn# bn
-{-# NOINLINE negateInteger #-}
+-- TODO quotInteger :: Integer -> Integer -> Integer
+-- TODO remInteger :: Integer -> Integer -> Integer
+-- TODO divModInteger :: Integer -> Integer -> (#Integer, Integer#)
+-- TODO divInteger :: Integer -> Integer -> Integer
+-- TODO modInteger :: Integer -> Integer -> Integer
+
+-- ** Bit operations
+
+-- TODO complementInteger :: Integer -> Integer
+-- TODO andInteger :: Integer -> Integer -> Integer
+-- TODO xorInteger :: Integer -> Integer -> Integer
 
 -- | Bitwise OR of Integers.
 orInteger :: Integer -> Integer -> Integer
@@ -230,7 +252,68 @@ shiftLInteger (Bp# bn) n# = Bp# (shiftLBigNum bn n#)
 shiftLInteger (Bn# bn) n# = Bn# (shiftLBigNum bn n#)
 {-# NOINLINE shiftLInteger #-}
 
--- * Functions operating on BigNum
+-- TODO shiftRInteger :: Integer -> Int# -> Integer
+
+-- ** Comparison
+
+-- TODO compareInteger :: Integer -> Integer -> Ordering
+-- TODO eqInteger# :: Integer -> Integer -> Int#
+-- TODO neqInteger :: Integer -> Integer -> Int#
+-- TODO geInteger# :: Integer -> Integer -> Int#
+-- TODO gtInteger# :: Integer -> Integer -> Int#
+-- TODO leInteger# :: Integer -> Integer -> Int#
+-- TODO ltInteger# :: Integer -> Integer -> Int#
+
+-- * BigNum functions
+
+-- | OpenSSL BIGNUM represented by an absolute magnitude as 'Word#' in a
+-- 'ByteArray#'. It corresponds to the 'd' array in libcrypto's bignum_st
+-- structure. Length is always a multiple of Word#, least-significant first
+-- (BN_BITS2 == 'WORD_SIZE_IN_BITS').
+data BigNum = BN# ByteArray#
+
+-- | Mutable variant of BigNum for internal use.
+data MutableBigNum s = MBN# (MutableByteArray# s)
+
+-- | Create a MutableBigNum with given count of words.
+newBigNum :: Int# -> S s (MutableBigNum s)
+newBigNum count# s =
+  -- Calculate byte size using shifts, e.g. for 64bit systems:
+  -- total bytes = word count * 8 = word count * 2 ^ 3 = word count << 3
+  case newByteArray# (count# `uncheckedIShiftL#` WORD_SHIFT#) s of
+    (# s', mba# #) -> (# s', MBN# mba# #)
+
+-- | Freeze a MutableBigNum into a BigNum.
+freezeBigNum :: MutableBigNum s -> S s BigNum
+freezeBigNum (MBN# mba#) s =
+  case unsafeFreezeByteArray# mba# s of
+    (# s', ba# #) -> (# s', BN# ba# #)
+
+-- | Shrink a MutableBigNum the the given count of Word#.
+shrinkBigNum :: MutableBigNum s -> Int# -> S s (MutableBigNum s)
+shrinkBigNum mba@(MBN# mba#) 0# s =
+  -- BigNum always holds min one word, but clear it in this case
+  case shrinkBigNum mba 1# s of { (# s1, mba' #) ->
+  case writeWordArray# mba# 0# 0## s1 of { s2 ->
+  (# s2, mba #)
+  }}
+shrinkBigNum mba@(MBN# mba#) n# s
+  | isTrue# (actual# ==# desired#) = (# s', mba #)
+  | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mba #)
+ where
+  !(# s', actual# #) = getSizeofMutableByteArray# mba# s
+  desired# = n# `uncheckedIShiftL#` WORD_SHIFT#
+
+-- | Write a word to a MutableBigNum at given word index. Size is not checked!
+writeBigNum :: MutableBigNum s -> Int# -> Word# -> S s ()
+writeBigNum (MBN# mba#) i# w# s =
+  let s' = writeWordArray# mba# i# w# s
+  in  (# s', () #)
+
+-- | Copy magnitude from given BigNum into MutableBigNum.
+copyBigNum :: BigNum -> MutableBigNum s -> S s ()
+copyBigNum a@(BN# ba#) (MBN# mbb#) =
+  copyWordArray# ba# 0# mbb# 0# (wordsInBigNum# a)
 
 zeroBigNum :: BigNum
 zeroBigNum = runS (newBigNum 1# >>= freezeBigNum)
@@ -274,16 +357,16 @@ bigNumToNegInteger bn
 
 -- ** Comparisons
 
--- | Get number of Word# in BigNum. See newBigNum for shift explanation.
+-- | Get number of 'Word#' in 'BigNum'. See 'newBigNum' for shift explanation.
 wordsInBigNum# :: BigNum -> Int#
 wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
 
--- | Return 1# iff BigNum holds one Word# equal to given Word#.
+-- | Return @1#@ iff BigNum holds one 'Word#' equal to given 'Word#'.
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
   (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` w#)
 
--- | Return 1# iff BigNum is greater than a given Word#.
+-- | Return @1#@ iff BigNum is greater than a given 'Word#'.
 gtBigNumWord# :: BigNum -> Word# -> Int#
 gtBigNumWord# bn w# =
   (wordsInBigNum# bn ># 1#) `orI#` (bigNumToWord bn `gtWord#` w#)
@@ -496,48 +579,6 @@ foreign import ccall unsafe "integer_bn_div"
          -> ByteArray# -> Int#
          -> ByteArray# -> ByteArray#
          -> IO Int
-
--- ** Low-level BigNum creation and manipulation
-
--- | Create a MutableBigNum with given count of words.
-newBigNum :: Int# -> S s (MutableBigNum s)
-newBigNum count# s =
-  -- Calculate byte size using shifts, e.g. for 64bit systems:
-  -- total bytes = word count * 8 = word count * 2 ^ 3 = word count << 3
-  case newByteArray# (count# `uncheckedIShiftL#` WORD_SHIFT#) s of
-    (# s', mba# #) -> (# s', MBN# mba# #)
-
--- | Freeze a MutableBigNum into a BigNum.
-freezeBigNum :: MutableBigNum s -> S s BigNum
-freezeBigNum (MBN# mba#) s =
-  case unsafeFreezeByteArray# mba# s of
-    (# s', ba# #) -> (# s', BN# ba# #)
-
--- | Shrink a MutableBigNum the the given count of Word#.
-shrinkBigNum :: MutableBigNum s -> Int# -> S s (MutableBigNum s)
-shrinkBigNum mba@(MBN# mba#) 0# s =
-  -- BigNum always holds min one word, but clear it in this case
-  case shrinkBigNum mba 1# s of { (# s1, mba' #) ->
-  case writeWordArray# mba# 0# 0## s1 of { s2 ->
-  (# s2, mba #)
-  }}
-shrinkBigNum mba@(MBN# mba#) n# s
-  | isTrue# (actual# ==# desired#) = (# s', mba #)
-  | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mba #)
- where
-  !(# s', actual# #) = getSizeofMutableByteArray# mba# s
-  desired# = n# `uncheckedIShiftL#` WORD_SHIFT#
-
--- | Write a word to a MutableBigNum at given word index. Size is not checked!
-writeBigNum :: MutableBigNum s -> Int# -> Word# -> S s ()
-writeBigNum (MBN# mba#) i# w# s =
-  let s' = writeWordArray# mba# i# w# s
-  in  (# s', () #)
-
--- | Copy magnitude from given BigNum into MutableBigNum.
-copyBigNum :: BigNum -> MutableBigNum s -> S s ()
-copyBigNum a@(BN# ba#) (MBN# mbb#) =
-  copyWordArray# ba# 0# mbb# 0# (wordsInBigNum# a)
 
 -- * ByteArray# utilities
 
