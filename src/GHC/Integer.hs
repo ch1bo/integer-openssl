@@ -527,24 +527,22 @@ foreign import ccall unsafe "integer_bn_mul"
 quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
 quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
 quotRemBigNumWord a 1## = (# a, 0## #)
-quotRemBigNumWord a@(BN# ba#) w# = divWord
+quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (I# r#)) -> (# q, int2Word# r# #)
  where
   na# = wordsInBigNum# a
   nq# = na# +# 1#
-  divWord =
-    case newBigNum nq# realWorld# of { (# s1, q@(MBN# mbq#) #) ->
-    case copyBigNum a q s1 of { (# s2, () #) ->
-    case newByteArray# 4# s2 of { (# s3, mbqtop# #) ->
-    case liftIO (bn_div_word mbq# nq# w# mbqtop#) s3 of { (# s4, (I# r#) #) ->
-    case readInt32Array# mbqtop# 0# s4 of { (# s5, qtop# #) ->
-    case shrinkBigNum q qtop# s5 of { (# s6, q' #) ->
-    case freezeBigNum q' s4 of { (# s5, q'' #) ->
-    (# q'', int2Word# r# #)
-    }}}}}}}
+  divWord = do
+    q@(MBN# mbq#) <- newBigNum nq#
+    copyBigNum a q
+    qtopba@(BA# qtopba#) <- newByteArray 4#
+    r@(I# r#) <- liftIO (bn_div_word mbq# nq# w# qtopba#)
+    (I# qtop#) <- readInt32ByteArray qtopba
+    q' <- shrinkBigNum q qtop# >>= freezeBigNum
+    return (q', r)
 
 -- int integer_bn_div_word(BN_ULONG *qb, size_t qsize, BN_ULONG w, int32_t *qtop)
 foreign import ccall unsafe "integer_bn_div_word"
-  bn_div_word :: MutableByteArray# s -> Int# -> Word# -> MutableByteArray# s -> IO Int
+  bn_div_word :: MutableByteArray# s -> Int# -> Word# -> ByteArray# -> IO Int
 
 -- | Divide a BigNum by another BigNum, returning the quotient and a remainder
 -- (rounded to zero). The divisor must not be 0##.
