@@ -26,12 +26,16 @@ import qualified OpenSSL.GHC.Integer.Type as X
 # define ABS_INT_MINBOUND   0x8000000000000000
 # define WORD_SIZE_IN_BYTES 8
 # define WORD_SHIFT         3
+# define WORD_MINBOUND      0x0000000000000000
+# define WORD_MAXBOUND      0xffffffffffffffff
 #elif WORD_SIZE_IN_BITS == 32
 # define INT_MINBOUND       -0x80000000
 # define INT_MAXBOUND       0x7fffffff
 # define ABS_INT_MINBOUND   0x80000000
 # define WORD_SIZE_IN_BYTES 4
 # define WORD_SHIFT         2
+# define WORD_MINBOUND       0x00000000
+# define WORD_MAXBOUND       0xffffffff
 #else
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
@@ -73,6 +77,19 @@ main = do
       describe "shiftLInteger" $ do
         prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
           X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
+
+      describe "wordToInteger" $ do
+        prop "works for random Word#" $ \(Positive (W# c#)) ->
+          X.wordToInteger c# <<>> Y.wordToInteger c#
+
+      describe "integerToWord" $ do
+        prop "works for random Integer" $ \(Integers x1 y1) ->
+          isTrue# (eqWord# (X.integerToWord x1) (Y.integerToWord y1))
+
+      describe "integerToInt" $ do
+        prop "works for random Integer" $ \(Integers x1 y1) ->
+          isTrue# (X.integerToInt x1 ==# Y.integerToInt y1)
+
 
     -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
