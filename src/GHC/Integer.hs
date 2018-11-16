@@ -87,8 +87,26 @@ wordToNegInteger w#
     i# = negateInt# (word2Int# w#)
 -- inlinable as only internally used
 
--- TODO integerToWord :: Integer -> Word#
--- TODO integerToInt :: Integer -> Int#
+-- | Truncates to least significant 
+-- Word#
+integerToWord :: Integer -> Word#
+integerToWord (S# i#) = int2Word# i#
+integerToWord (Bp# bn) = bigNumToWord bn
+integerToWord (Bn# bn) = int2Word# (negateInt# (bigNumToInt bn))
+{-# NOINLINE integerToWord #-}
+
+
+integerToInt :: Integer -> Int#
+integerToInt (S# i#) = i#
+integerToInt (Bp# bn) = bigNumToInt bn
+integerToInt (Bn# bn) = negateInt# (bigNumToInt bn)
+{-# NOINLINE integerToInt #-}
+
+{- 
+integerToInt (S# i#)  = i#
+integerToInt (Jp# bn) = bigNatToInt bn
+integerToInt (Jn# bn) = negateInt# (bigNatToInt bn)
+-}
 -- TODO floatFromInteger :: Integer -> Float#
 -- TODO doubleFromInteger :: Integer -> Double#
 -- TODO encodeFloatInteger :: Integer -> Int# -> Float#
@@ -338,6 +356,10 @@ wordToBigNum2 h# l# = runS $ do
 -- | Truncate a BigNum to a single Word#.
 bigNumToWord :: BigNum -> Word#
 bigNumToWord (BN# ba) = indexWordArray# ba 0#
+
+-- | Truncate a BigNum to a single Int#
+bigNumToInt :: BigNum -> Int#
+bigNumToInt (BN# ba) = indexIntArray# ba 0#
 
 -- | Create a positive Integer from given BigNum. Converts to small Integer if possible.
 bigNumToInteger :: BigNum -> Integer
