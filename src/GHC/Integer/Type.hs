@@ -101,27 +101,27 @@ wordToNegInteger w#
 
 -- TODO(SN) implement
 integerToWord :: Integer -> Word#
-integerToWord _ = 0##
+integerToWord _ = case undefined of _ -> 0##
 
 -- TODO(SN) implement
 integerToInt :: Integer -> Int#
-integerToInt _ = 0#
+integerToInt _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 floatFromInteger :: Integer -> Float#
-floatFromInteger _ = 0.0#
+floatFromInteger _ = case undefined of _ -> 0.0#
 
 -- TODO(SN) implement
 doubleFromInteger :: Integer -> Double#
-doubleFromInteger _ = 0.0##
+doubleFromInteger _ = case undefined of _ -> 0.0##
 
 -- TODO(SN) implement
 encodeFloatInteger :: Integer -> Int# -> Float#
-encodeFloatInteger _ _ = 0.0#
+encodeFloatInteger _ _ = case undefined of _ -> 0.0#
 
 -- TODO(SN) implement
 encodeDoubleInteger :: Integer -> Int# -> Double#
-encodeDoubleInteger _ _ = 0.0##
+encodeDoubleInteger _ _ = case undefined of _ -> 0.0##
 
 -- TODO(SN) implement
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
@@ -129,7 +129,7 @@ decodeDoubleInteger _ = (# undefined, 0# #)
 
 -- TODO(SN) implement
 hashInteger :: Integer -> Int#
-hashInteger _ = 0#
+hashInteger _ = case undefined of _ -> 0#
 
 -- ** Arithmetic operations
 
@@ -335,27 +335,27 @@ compareInteger _ _ = undefined
 
 -- TODO(SN) implement
 eqInteger# :: Integer -> Integer -> Int#
-eqInteger# _ _ = 0#
+eqInteger# _ _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 neqInteger# :: Integer -> Integer -> Int#
-neqInteger# _ _ = 0#
+neqInteger# _ _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 geInteger# :: Integer -> Integer -> Int#
-geInteger# _ _ = 0#
+geInteger# _ _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 gtInteger# :: Integer -> Integer -> Int#
-gtInteger# _ _ = 0#
+gtInteger# _ _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 leInteger# :: Integer -> Integer -> Int#
-leInteger# _ _ = 0#
+leInteger# _ _ = case undefined of _ -> 0#
 
 -- TODO(SN) implement
 ltInteger# :: Integer -> Integer -> Int#
-ltInteger# _ _ = 0#
+ltInteger# _ _ = case undefined of _ -> 0#
 
 -- * BigNum functions
 
