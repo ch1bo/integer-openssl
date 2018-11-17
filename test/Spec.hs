@@ -2,6 +2,7 @@
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UnboxedTuples       #-}
+{-# LANGUAGE PackageImports      #-}
 
 module Main where
 
@@ -17,6 +18,7 @@ import           Test.QuickCheck       hiding ((.&.), NonZero)
 
 import qualified GHC.Integer           as Y
 import qualified OpenSSL.GHC.Integer   as X
+
 
 #include "MachDeps.h"
 
@@ -42,7 +44,24 @@ import qualified OpenSSL.GHC.Integer   as X
 
 main :: IO ()
 main = do
-  hspec $ do
+
+  let vals = [40000000, 20000000, 4000000, 180000005]
+      x = X.mkInteger True vals 
+      y = Y.mkInteger True vals
+
+      bn (X.S# b) = X.wordToBigNum (int2Word# b)
+      bn (X.Bp# b) = b
+      bn (X.Bn# b) = b
+      n = (I# (X.wordsInBigNum# (bn x)))
+
+      ws = map (\(I# i) -> X.bigNumIdx (bn x) i) [0 .. (n-1)]
+
+  putStrLn $ "\nn: " <> show (I# n) <> map (\g -> showHex (W# g) " ") ws
+
+  putStrLn $ "\nX.doubleFromInteger: " <> showHexX x <> " = " <> show (D# (X.doubleFromInteger x))
+  putStrLn $ "Y.doubleFromInteger: " <> showHexY y <> " = " <> show (D# (Y.doubleFromInteger y))
+
+  {-hspec $ do
     describe "library vs builtin" $ do
       describe "smallIntger" $ do
         prop "works for random Int#" $ \(SmallInt (I# i)) ->
@@ -90,6 +109,9 @@ main = do
         prop "works for random Integer" $ \(Integers x1 y1) ->
           isTrue# (X.integerToInt x1 ==# Y.integerToInt y1)
 
+      describe "doubleFromInteger" $ do
+        prop "works for random Integer" $ \(Integers x1 y1) ->
+          isTrue# (X.doubleFromInteger x1 ==## Y.doubleFromInteger y1)
 
     -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
@@ -99,7 +121,7 @@ main = do
     --     show (X.wordToBigNum (w1 `or#` w2)) === show ((X.wordToBigNum w1) `X.orBigNum` (X.wordToBigNum w2))
 
     --   prop "minusBigNumWord (wordToBigNum w) w == wordToBigNum 0" $ \(W# w#) ->
-    --     show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)
+    --     show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)-}
 
 showHexY :: Y.Integer -> String
 showHexY i

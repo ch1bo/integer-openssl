@@ -16,6 +16,7 @@ import GHC.Magic
 import GHC.Prim
 import GHC.Types
 
+
 -- * Integer functions
 
 -- TODO(SN): general:
@@ -25,21 +26,29 @@ import GHC.Types
 --  - 32-bit support
 --  - additional Integer operations: gcdInteger, lcmInteger, bitInteger
 
+
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
 # define INT_MAXBOUND       0x7fffffffffffffff
 # define ABS_INT_MINBOUND   0x8000000000000000
 # define WORD_SIZE_IN_BYTES 8
 # define WORD_SHIFT         3
+# define HIGH_HALF_SHIFT    32
+# define LOW_HALF_MASK      0xffffffff
+lowHalfMask   () = 0xFFFFFFFF##
 #elif WORD_SIZE_IN_BITS == 32
 # define INT_MINBOUND       -0x80000000
 # define INT_MAXBOUND       0x7fffffff
 # define ABS_INT_MINBOUND   0x80000000
 # define WORD_SIZE_IN_BYTES 4
 # define WORD_SHIFT         2
+# define HIGH_HALF_SHIFT    16
+# define LOW_HALF_MASK      0xffff
 #else
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
+
+
 
 data Integer = S# !Int#
                -- ^ small integer
@@ -102,13 +111,63 @@ integerToInt (Bp# bn) = bigNumToInt bn
 integerToInt (Bn# bn) = negateInt# (bigNumToInt bn)
 {-# NOINLINE integerToInt #-}
 
-{- 
-integerToInt (S# i#)  = i#
-integerToInt (Jp# bn) = bigNatToInt bn
-integerToInt (Jn# bn) = negateInt# (bigNatToInt bn)
+floatFromInteger :: Integer -> Float#
+floatFromInteger i = double2Float# (doubleFromInteger i)
+{-# NOINLINE floatFromInteger #-}
+
+
+doubleFromInteger :: Integer -> Double#
+doubleFromInteger (S# i#) = int2Double# i#
+doubleFromInteger (Bp# bn) = doubleFromPositive bn
+doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn) 
+{-# NOINLINE doubleFromInteger #-}
+       
+{-doubleFromPositive :: BigNum -> Double#
+doubleFromPositive bn = doubleFromPositive' bn 0#
+  where
+    doubleFromPositive' bn !idx = 
+      case isTrue# (idx +# 1# ==# wordsInBigNum# bn) of
+        True ->  0.0##
+        _ -> case bigNumIdx bn idx of
+                x -> (doubleFromPositive' bn (idx +# 1#)) 
+                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
+                      +## int2Double# (word2Int# x)-}
+
+doubleFromPositive :: BigNum -> Double#
+doubleFromPositive bn = doubleFromPositive' bn 0#
+  where
+    doubleFromPositive' bn !idx = 
+      case isTrue# (idx +# 1# ==# wordsInBigNum# bn) of
+        True ->  0.0##
+        _ -> case bigNumIdx bn idx of
+                x -> case splitHalves x of
+                  (# h, l #) -> (doubleFromPositive' bn (idx +# 1#)) 
+                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
+                      +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
+                      +## int2Double# (word2Int# l)
+
+
+splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
+splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
+                      x `and#` LOW_HALF_MASK## #)
+                      
+
+{-doubleFromPositive :: Positive -> Double#
+doubleFromPositive None = 0.0##
+doubleFromPositive (Some w ds)
+    = case splitHalves w of
+      (# h, l #) ->
+      (doubleFromPositive ds *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT##))
+      +## (int2Double# (word2Int# h) *##
+              (2.0## **## int2Double# (highHalfShift ())))
+      +## int2Double# (word2Int# l)
+       
+splitHalves :: Digit -> (# {- High -} Digit, {- Low -} Digit #)
+splitHalves (!x) = (# x `uncheckedShiftRL#` highHalfShift (),
+                      x `and#` lowHalfMask () #)
+
 -}
--- TODO floatFromInteger :: Integer -> Float#
--- TODO doubleFromInteger :: Integer -> Double#
+
 -- TODO encodeFloatInteger :: Integer -> Int# -> Float#
 -- TODO encodeDoubleInteger :: Integer -> Int# -> Double#
 -- TODO decodeDoubleInteger :: Double# -> (# Integer, Int# #)
@@ -356,6 +415,9 @@ wordToBigNum2 h# l# = runS $ do
 -- | Truncate a BigNum to a single Word#.
 bigNumToWord :: BigNum -> Word#
 bigNumToWord (BN# ba) = indexWordArray# ba 0#
+
+bigNumIdx :: BigNum -> Int# -> Word#
+bigNumIdx (BN# ba) idx = indexWordArray# ba idx 
 
 -- | Truncate a BigNum to a single Int#
 bigNumToInt :: BigNum -> Int#
