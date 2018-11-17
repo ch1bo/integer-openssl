@@ -636,7 +636,7 @@ quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (I# r#)) -> (# q, in
 
 -- int integer_bn_div_word(BN_ULONG *qb, size_t qsize, BN_ULONG w, int32_t *qtop)
 foreign import ccall unsafe "integer_bn_div_word"
-  bn_div_word :: MutableByteArray# s -> Int# -> Word# -> MutableByteArray# s -> IO Int
+  bn_div_word :: MutableByteArray# s -> Int# -> Word# -> ByteArray# -> IO Int
 
 -- | Divide a BigNum by another BigNum, returning the quotient and a remainder
 -- (rounded to zero). The divisor must not be 0##.
