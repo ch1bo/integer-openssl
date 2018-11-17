@@ -128,7 +128,14 @@ negateInteger (Bp# bn)
   | True = Bn# bn
 {-# NOINLINE negateInteger #-}
 
--- TODO absInteger :: Integer -> Integer
+-- Absolute value
+absInteger :: Integer -> Integer
+absInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
+absInteger (S# i)
+  | isTrue# (i >=# 0#) = S# i
+  | True = S# (negateInt# i)
+absInteger (Bp# bn) = Bp# bn
+absInteger (Bn# bn) = Bp# bn
 
 -- TODO signumInteger :: Integer -> Integer
 
