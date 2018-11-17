@@ -6,20 +6,6 @@
 // relocated by "expand" functions as that memory is managed by the Haskell RTS.
 // Furthermore, most functions return the number of actually used words on the
 // modified word array.
-// TODO(SN): update description
-
-// Define BIGNUM aka bignum_st as bn_lcl.h is internal
-typedef struct bignum_st BIGNUM;
-
-struct bignum_st
-{
-  BN_ULONG *d;    /* Pointer to an array of 'BN_BITS2' bit chunks. */
-  int top;        /* Index of last used d +1. */
-  /* The next are internal book keeping for bn_expand. */
-  int dmax;       /* Size of the d array. */
-  int neg;        /* one if the number is negative */
-  int flags;
-};
 
 // Macros to shorten BIGNUM declaration
 #define S_BIGNUM(_name, _b, _size, _neg) \
