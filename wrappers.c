@@ -41,8 +41,8 @@ size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize,
   return r.top;
 }
 
-int integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
-  S_BIGNUM(r, rb, rsize, rneg)
+int integer_bn_add_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
+  U_BIGNUM(r, rb, rsize)
   r.top = rsize - 1; // See below
   int ret = BN_add_word(&r, w);
   assert(ret == 1);
@@ -50,8 +50,8 @@ int integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   return r.top;
 }
 
-int integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
-  S_BIGNUM(r, rb, rsize, rneg)
+int integer_bn_sub_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
+  U_BIGNUM(r, rb, rsize)
   int ret = BN_sub_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);
