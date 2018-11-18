@@ -66,6 +66,27 @@ int integer_bn_mul_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   return r.top;
 }
 
+int integer_bn_add(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize) {
+  U_BIGNUM(r, rb, rsize);
+  U_BIGNUM(a, ab, asize);
+  U_BIGNUM(b, bb, bsize);
+  int ret = BN_add(&r, &a, &b);
+  assert(ret == 1);
+  assert(r.d == rb);
+  return r.top;
+}
+
+int integer_bn_sub(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize, int *neg) {
+  U_BIGNUM(r, rb, rsize);
+  U_BIGNUM(a, ab, asize);
+  U_BIGNUM(b, bb, bsize);
+  int ret = BN_sub(&r, &a, &b);
+  assert(ret == 1);
+  assert(r.d == rb);
+  *neg = r.neg;
+  return r.top;
+}
+
 int integer_bn_mul(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize) {
   U_BIGNUM(r, rb, rsize);
   U_BIGNUM(a, ab, asize);

@@ -68,6 +68,10 @@ main = do
         prop "works for integers" $ \(Integers x y) ->
           X.absInteger x <<>> Y.absInteger y
 
+      describe "plusInteger" $ do
+        prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
+
       describe "timesInteger" $ do
         prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
           X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2

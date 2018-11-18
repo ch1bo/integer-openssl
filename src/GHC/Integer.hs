@@ -114,8 +114,28 @@ integerToInt (Jn# bn) = negateInt# (bigNatToInt bn)
 -- TODO decodeDoubleInteger :: Double# -> (# Integer, Int# #)
 
 -- ** Arithmetic operations
+plusInteger :: Integer -> Integer -> Integer
+plusInteger (S# (INT_MINBOUND#)) (S# (INT_MINBOUND#)) = Bn# (wordToBigNum2 (int2Word# 1#) (int2Word# 0#))
+plusInteger (S# x) (S# y) =
+  case addIntC# x y of
+    (# z, 0# #) -> S# z
+    (# z, _ #)
+      | isTrue# (z >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z)))
+      | True -> Bp# (wordToBigNum (int2Word# z))
+plusInteger (S# x) (Bp# y)
+  | isTrue# (x >=# 0#) = Bp# (plusBigNumWord 0# y (int2Word# x))
+  | True = bigNumToInteger (minusBigNumWord 0# y (int2Word# (negateInt# x)))
+plusInteger (S# x) (Bn# y)
+  | isTrue# (x >=# 0#) = bigNumToNegInteger (minusBigNumWord 0# y (int2Word# x))
+  | True = Bn# (plusBigNumWord 0# y (int2Word# (negateInt# x)))
+plusInteger b (S# x) = plusInteger (S# x) b
+plusInteger (Bp# x) (Bp# y) = Bp# (plusBigNum x y)
+plusInteger (Bn# x) (Bn# y) = Bn# (plusBigNum x y)
+plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
+  (bn, False) -> bigNumToInteger bn
+  (bn, True) -> bigNumToNegInteger bn
+plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
 
--- TODO plusInteger :: Integer -> Integer -> Integer
 -- TODO minusInteger :: Integer -> Integer -> Integer
 
 -- | Switch sign of Integer.
@@ -475,6 +495,40 @@ foreign import ccall unsafe "integer_bn_lshift"
   bn_lshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
 
 -- ** Arithmetic operations
+
+plusBigNum :: BigNum -> BigNum -> BigNum
+plusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    (I# i#) <- liftIO (bn_add mbr# nr# a# na# b# nb#)
+    shrinkBigNum r i# >>= freezeBigNum
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = (maxInt# na# nb#) +# 1#
+
+minusBigNum :: BigNum -> BigNum -> (BigNum, Bool)
+minusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    ba@(BA# negValue#) <- newByteArray 4#
+    (I# i#) <- liftIO (bn_sub mbr# nr# a# na# b# nb# negValue#)
+    (I# neg#) <- readInt32ByteArray ba
+    bn <- shrinkBigNum r i# >>= freezeBigNum
+    return (bn, isTrue# neg#)
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = maxInt# na# nb#
+
+foreign import ccall unsafe "integer_bn_add"
+  bn_add :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
+
+foreign import ccall unsafe "integer_bn_sub"
+  bn_sub :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> ByteArray# -> IO Int
+
+maxInt# :: Int# -> Int# -> Int#
+maxInt# x y
+  | isTrue# (x >=# y) = x
+  | True = y
 
 -- | Add given Word# to BigNum.
 plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
