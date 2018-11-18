@@ -1,4 +1,4 @@
-resolver: lts-10.1
+resolver: lts-12.18
 # Use a custom built ghc as no prebuilt linux integer-simple build is available
 #ghc-variant: integersimple
 system-ghc: true
@@ -10,14 +10,8 @@ flags:
   integer-logarithms:
     integer-gmp: false
   integer-openssl:
-    redefine-unit-id: false
     integer-simple: true
   scientific:
     integer-simple: true
   text:
     integer-simple: true
-extra-deps:
-- hashable-1.2.6.1
-- integer-logarithms-1.0.2
-- scientific-0.3.5.2
-- text-1.2.2.2

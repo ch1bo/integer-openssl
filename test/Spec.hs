@@ -15,8 +15,8 @@ import           Test.Hspec            (Expectation, describe, hspec, it,
 import           Test.Hspec.QuickCheck (prop)
 import           Test.QuickCheck       hiding ((.&.), NonZero)
 
-import qualified GHC.Integer           as Y
-import qualified OpenSSL.GHC.Integer   as X
+import qualified GHC.Integer              as Y
+import qualified OpenSSL.GHC.Integer.Type as X
 
 #include "MachDeps.h"
 
