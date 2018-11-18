@@ -152,20 +152,48 @@ splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
                       x `and#` LOW_HALF_MASK## #)
                       
 
-{-doubleFromPositive :: Positive -> Double#
-doubleFromPositive None = 0.0##
-doubleFromPositive (Some w ds)
-    = case splitHalves w of
-      (# h, l #) ->
-      (doubleFromPositive ds *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT##))
-      +## (int2Double# (word2Int# h) *##
-              (2.0## **## int2Double# (highHalfShift ())))
-      +## int2Double# (word2Int# l)-}
-       
-
       -- TODO(SN) implement
+{-# NOINLINE encodeDoubleInteger #-}
 encodeDoubleInteger :: Integer -> Int# -> Double#
-encodeDoubleInteger _ _ = case undefined of _ -> 0.0##
+encodeDoubleInteger (S# i) e0 
+  | isTrue# (i >=# 0#) = encodeDouble# (int2Word# i) e0 
+  | isTrue# (i ==# INT_MINBOUND#) = (encodeDouble# (int2Word# (negateInt# i)) e0)
+  | True = negateDouble# (encodeDouble# (int2Word# (negateInt# i)) e0)
+encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
+    where
+      f !acc !idx !e =
+        let n = wordsInBigNum# bn 
+            newIdx = idx +# 1# in
+        case isTrue# (idx ==# n) of
+          True -> acc
+          _ -> 
+              let d = bigNumIdx bn idx 
+                  newAcc = acc +## encodeDouble# d e
+                  newE = e +# WORD_SIZE_IN_BITS# 
+              in
+              f newAcc newIdx newE
+encodeDoubleInteger (Bn# bn) e0 = 
+  (encodeDoubleInteger (Bp# bn) e0)
+
+{-encodeDoubleInteger :: Integer -> Int# -> Double#
+encodeDoubleInteger (Positive ds0) e0 = f 0.0## ds0 e0
+    where f !acc None        (!_) = acc
+          f !acc (Some d ds) !e   = f (acc +## encodeDouble# d e)
+                                      ds
+                                      -- XXX We assume that this adding to e
+                                      -- isn't going to overflow
+                                      (e +# WORD_SIZE_IN_BITS#)
+encodeDoubleInteger (Negative ds) e
+    = negateDouble# (encodeDoubleInteger (Positive ds) e)
+encodeDoubleInteger Naught _ = 0.0##
+-}
+
+-- | __word_encodeDouble does simply do some preparations and then
+-- calls 'ldexp p1 p2' in C
+foreign import ccall unsafe "__word_encodeDouble"
+        encodeDouble# :: Word# -> Int# -> Double#
+
+
 
 -- TODO(SN) implement
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)

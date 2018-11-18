@@ -45,34 +45,19 @@ import "integer-openssl" GHC.Integer.Type   as X hiding (($))
 main :: IO ()
 main = do
 
-  -- let --vals = [40000000, 20000000, 4000000, 180000005]
-  --     vals = [0xff, 0xff, 0xaa, 0xaa]
-  --     x = X.mkInteger True vals 
-  --     y = Y.mkInteger True vals
-
-  --     bn (X.S# b) = X.wordToBigNum (int2Word# b)
-  --     bn (X.Bp# b) = b
-  --     bn (X.Bn# b) = b
-  --     n = (I# (X.wordsInBigNum# (bn x)))
-
-  --     --ws = map (\(I# i) -> X.bigNumIdx (bn x) i) [0 .. (n-1)]
-  --     ws1 = X.bigNumIdx (bn x) 0#
-  --     ws2 = X.bigNumIdx (bn x) 1#
-
-  --     (# ws1h, ws1l #) = X.splitHalves ws1
-  --     ws1hmul = int2Double# (word2Int# ws1h) *## (2.0## **## int2Double# 32#)
-  --     ws1lmul = int2Double# (word2Int# ws1l)
-  --     ws1d = ws1hmul +## ws1lmul
-
-
-  -- putStrLn $ "\nn: " <> show n <> " ws1: " <> showHex (W# ws1) "" <> " (" <> show (W# ws1) <> ") "
-  --   <> " ws2: " <> showHex (W# ws2) "" <> " (" <> show (W# ws2) <> ")"
-  -- putStrLn $ "ws1h: " <> showHex (W# ws1h) "" <> " ws1l: " <> showHex (W# ws1l) ""
-  -- putStrLn $ "ws1hmul: " <> show (D# ws1hmul) <> " ws1lmul: " <> show (D# ws1lmul) 
-  --   <> " ws1d: " <> show (D# ws1d)
-
-  -- putStrLn $ "\nX.doubleFromInteger: " <> showHexX x <> " = " <> show (D# (X.doubleFromInteger x))
-  -- putStrLn $ "Y.doubleFromInteger: " <> showHexY y <> " = " <> show (D# (Y.doubleFromInteger y))
+  let --vals = [40000000, 20000000, 4000000, 180000005]
+      vals = [3, 1]
+      x = X.mkInteger False vals 
+      y = Y.mkInteger False vals
+  
+      w = 5##
+      i = -5#
+ 
+  -- putStrLn $ "\nencodeDouble#: 5 " <> show (D# (X.encodeDoubleInteger x -2#))
+  --   <> "\nencodeDouble#: -5 " <> show (D# (encodeDouble# (int2Word# i) -2#))
+ 
+  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x -1#))
+  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y -1#))
 
   hspec $ do
     describe "library vs builtin" $ do
@@ -126,6 +111,10 @@ main = do
         prop "works for random Integer" $ \(Integers x1 y1) ->
           isTrue# (X.doubleFromInteger x1 ==## Y.doubleFromInteger y1)
 
+      describe "encodeDoubleInteger" $ do
+        prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
+          isTrue# (X.encodeDoubleInteger x1 i ==## Y.encodeDoubleInteger y1 i)
+    
     -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
