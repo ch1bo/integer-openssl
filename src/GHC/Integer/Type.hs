@@ -35,7 +35,6 @@ import GHC.Types
 # define WORD_SHIFT         3
 # define HIGH_HALF_SHIFT    32
 # define LOW_HALF_MASK      0xffffffff
-lowHalfMask   () = 0xFFFFFFFF##
 #elif WORD_SIZE_IN_BITS == 32
 # define INT_MINBOUND       -0x80000000
 # define INT_MAXBOUND       0x7fffffff
@@ -131,26 +130,18 @@ doubleFromInteger (Bp# bn) = doubleFromPositive bn
 doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn) 
 {-# NOINLINE doubleFromInteger #-}
        
-{-doubleFromPositive :: BigNum -> Double#
-doubleFromPositive bn = doubleFromPositive' bn 0#
-  where
-    doubleFromPositive' bn !idx = 
-      case isTrue# (idx +# 1# ==# wordsInBigNum# bn) of
-        True ->  0.0##
-        _ -> case bigNumIdx bn idx of
-                x -> (doubleFromPositive' bn (idx +# 1#)) 
-                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
-                      +## int2Double# (word2Int# x)-}
 
 doubleFromPositive :: BigNum -> Double#
 doubleFromPositive bn = doubleFromPositive' bn 0#
   where
     doubleFromPositive' bn !idx = 
-      case isTrue# (idx +# 1# ==# wordsInBigNum# bn) of
+      let n = wordsInBigNum# bn 
+          newIdx = idx +# 1# in
+      case isTrue# (idx ==# n) of
         True ->  0.0##
         _ -> case bigNumIdx bn idx of
                 x -> case splitHalves x of
-                  (# h, l #) -> (doubleFromPositive' bn (idx +# 1#)) 
+                  (# h, l #) -> (doubleFromPositive' bn newIdx) 
                       *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
                       +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
                       +## int2Double# (word2Int# l)

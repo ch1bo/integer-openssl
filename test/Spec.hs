@@ -16,8 +16,8 @@ import           Test.Hspec            (Expectation, describe, hspec, it,
 import           Test.Hspec.QuickCheck (prop)
 import           Test.QuickCheck       hiding ((.&.), NonZero)
 
-import qualified GHC.Integer           as Y
-import qualified OpenSSL.GHC.Integer   as X
+import "integer-gmp"  GHC.Integer      as Y
+import "integer-openssl" GHC.Integer.Type   as X hiding (($))
 
 
 #include "MachDeps.h"
@@ -45,23 +45,36 @@ import qualified OpenSSL.GHC.Integer   as X
 main :: IO ()
 main = do
 
-  let vals = [40000000, 20000000, 4000000, 180000005]
-      x = X.mkInteger True vals 
-      y = Y.mkInteger True vals
+  -- let --vals = [40000000, 20000000, 4000000, 180000005]
+  --     vals = [0xff, 0xff, 0xaa, 0xaa]
+  --     x = X.mkInteger True vals 
+  --     y = Y.mkInteger True vals
 
-      bn (X.S# b) = X.wordToBigNum (int2Word# b)
-      bn (X.Bp# b) = b
-      bn (X.Bn# b) = b
-      n = (I# (X.wordsInBigNum# (bn x)))
+  --     bn (X.S# b) = X.wordToBigNum (int2Word# b)
+  --     bn (X.Bp# b) = b
+  --     bn (X.Bn# b) = b
+  --     n = (I# (X.wordsInBigNum# (bn x)))
 
-      ws = map (\(I# i) -> X.bigNumIdx (bn x) i) [0 .. (n-1)]
+  --     --ws = map (\(I# i) -> X.bigNumIdx (bn x) i) [0 .. (n-1)]
+  --     ws1 = X.bigNumIdx (bn x) 0#
+  --     ws2 = X.bigNumIdx (bn x) 1#
 
-  putStrLn $ "\nn: " <> show (I# n) <> map (\g -> showHex (W# g) " ") ws
+  --     (# ws1h, ws1l #) = X.splitHalves ws1
+  --     ws1hmul = int2Double# (word2Int# ws1h) *## (2.0## **## int2Double# 32#)
+  --     ws1lmul = int2Double# (word2Int# ws1l)
+  --     ws1d = ws1hmul +## ws1lmul
 
-  putStrLn $ "\nX.doubleFromInteger: " <> showHexX x <> " = " <> show (D# (X.doubleFromInteger x))
-  putStrLn $ "Y.doubleFromInteger: " <> showHexY y <> " = " <> show (D# (Y.doubleFromInteger y))
 
-  {-hspec $ do
+  -- putStrLn $ "\nn: " <> show n <> " ws1: " <> showHex (W# ws1) "" <> " (" <> show (W# ws1) <> ") "
+  --   <> " ws2: " <> showHex (W# ws2) "" <> " (" <> show (W# ws2) <> ")"
+  -- putStrLn $ "ws1h: " <> showHex (W# ws1h) "" <> " ws1l: " <> showHex (W# ws1l) ""
+  -- putStrLn $ "ws1hmul: " <> show (D# ws1hmul) <> " ws1lmul: " <> show (D# ws1lmul) 
+  --   <> " ws1d: " <> show (D# ws1d)
+
+  -- putStrLn $ "\nX.doubleFromInteger: " <> showHexX x <> " = " <> show (D# (X.doubleFromInteger x))
+  -- putStrLn $ "Y.doubleFromInteger: " <> showHexY y <> " = " <> show (D# (Y.doubleFromInteger y))
+
+  hspec $ do
     describe "library vs builtin" $ do
       describe "smallIntger" $ do
         prop "works for random Int#" $ \(SmallInt (I# i)) ->
@@ -121,7 +134,7 @@ main = do
     --     show (X.wordToBigNum (w1 `or#` w2)) === show ((X.wordToBigNum w1) `X.orBigNum` (X.wordToBigNum w2))
 
     --   prop "minusBigNumWord (wordToBigNum w) w == wordToBigNum 0" $ \(W# w#) ->
-    --     show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)-}
+    --     show (X.minusBigNumWord 0# (X.wordToBigNum w#) w#) === show (X.wordToBigNum 0##)
 
 showHexY :: Y.Integer -> String
 showHexY i
