@@ -43,6 +43,7 @@ size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize,
 
 int integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   S_BIGNUM(r, rb, rsize, rneg)
+  r.top = rsize - 1; // See below
   int ret = BN_add_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);

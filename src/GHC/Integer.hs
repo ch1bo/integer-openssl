@@ -552,12 +552,13 @@ maxInt# x# y#
 plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
                -> BigNum -> Word# -> BigNum
 plusBigNumWord neg# a w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
+  r@(MBN# mbr#) <- newBigNum nr#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_add_word neg# mbr# na# w#)
+  (I# i#) <- liftIO (bn_add_word neg# mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
+   nr# = na# +# 1#
 
 -- size_t integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_add_word"
