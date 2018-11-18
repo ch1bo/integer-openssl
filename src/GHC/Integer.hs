@@ -116,12 +116,12 @@ integerToInt (Jn# bn) = negateInt# (bigNatToInt bn)
 -- ** Arithmetic operations
 plusInteger :: Integer -> Integer -> Integer
 plusInteger (S# (INT_MINBOUND#)) (S# (INT_MINBOUND#)) = Bn# (wordToBigNum2 (int2Word# 1#) (int2Word# 0#))
-plusInteger (S# x) (S# y) =
-  case addIntC# x y of
-    (# z, 0# #) -> S# z
-    (# z, _ #)
-      | isTrue# (z >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z)))
-      | True -> Bp# (wordToBigNum (int2Word# z))
+plusInteger (S# x#) (S# y#) =
+  case addIntC# x# y# of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
 plusInteger (S# x) (Bp# y)
   | isTrue# (x >=# 0#) = Bp# (plusBigNumWord 0# y (int2Word# x))
   | True = bigNumToInteger (minusBigNumWord 0# y (int2Word# (negateInt# x)))
@@ -136,7 +136,25 @@ plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
   (bn, True) -> bigNumToNegInteger bn
 plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
 
--- TODO minusInteger :: Integer -> Integer -> Integer
+minusInteger :: Integer -> Integer -> Integer
+minusInteger (S# x) (S# y) =
+  case subIntC# x y of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
+minusInteger (Bp# x) (S# y)
+  | isTrue# (y >=# 0#) = bigNumToInteger (minusBigNumWord 0# x (int2Word# y))
+  | True = Bp# (plusBigNumWord 0# x (int2Word# (negateInt# y)))
+minusInteger (Bn# x) (S# y)
+  | isTrue# (y >=# 0#) = Bn# (plusBigNumWord 0# x (int2Word# y))
+  | True = bigNumToNegInteger (minusBigNumWord 0# x (int2Word# (negateInt# y)))
+minusInteger (S# x) (Bp# y) = plusInteger (S# x) (Bn# y)
+minusInteger (S# x) (Bn# y) = plusInteger (S# x) (Bp# y)
+minusInteger (Bp# x) (Bp# y) = plusInteger (Bp# x) (Bn# y)
+minusInteger (Bp# x) (Bn# y) = Bp# (plusBigNum x y)
+minusInteger (Bn# x) (Bp# y) = Bn# (plusBigNum x y)
+minusInteger (Bn# x) (Bn# y) = plusInteger (Bp# y) (Bn# x)
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -526,9 +544,9 @@ foreign import ccall unsafe "integer_bn_sub"
   bn_sub :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> ByteArray# -> IO Int
 
 maxInt# :: Int# -> Int# -> Int#
-maxInt# x y
-  | isTrue# (x >=# y) = x
-  | True = y
+maxInt# x# y#
+  | isTrue# (x# >=# y#) = x#
+  | True = y#
 
 -- | Add given Word# to BigNum.
 plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative

@@ -72,6 +72,10 @@ main = do
         prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
           X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
 
+      describe "minusInteger" $ do
+        prop "can subtract random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          X.minusInteger x1 x2 <<>> Y.minusInteger y1 y2
+
       describe "timesInteger" $ do
         prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
           X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
