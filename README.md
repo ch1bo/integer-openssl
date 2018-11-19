@@ -63,6 +63,11 @@ variance introduced by outliers: 19% (moderately inflated)
 Benchmark integer-openssl-bench: FINISH
 ```
 
+More recent benchmarks with small, 128bit and 4096bit integers of multiplication and division:
+
+* [integer-openssl vs. integer-gmp](https://github.com/ch1bo/integer-openssl/blob/master/openssl-vs-gmp.html)
+* [integer-openssl vs. integer-simple](https://github.com/ch1bo/integer-openssl/blob/master/openssl-vs-simple.html)
+
 ## License
 
 The source code for `integer-openssl` is released under the [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause).
