@@ -65,8 +65,8 @@ Benchmark integer-openssl-bench: FINISH
 
 More recent benchmarks with small, 128bit and 4096bit integers of multiplication and division:
 
-* [integer-openssl vs. integer-gmp](https://github.com/ch1bo/integer-openssl/blob/master/openssl-vs-gmp.html)
-* [integer-openssl vs. integer-simple](https://github.com/ch1bo/integer-openssl/blob/master/openssl-vs-simple.html)
+* [integer-openssl vs. integer-gmp](https://ch1bo.github.io/integer-openssl/openssl-vs-gmp.html)
+* [integer-openssl vs. integer-simple](https://ch1bo.github.io/integer-openssl/openssl-vs-simple.html)
 
 ## License
 
