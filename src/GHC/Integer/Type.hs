@@ -471,7 +471,7 @@ testBitInteger _ _ = undefined
 compareInteger :: Integer -> Integer -> Ordering
 compareInteger _ _ = undefined
 
--- TODO(SN) implement
+-- | Equal operation for Integers. Returns 0# as false and 1# as True
 eqInteger# :: Integer -> Integer -> Int#
 eqInteger# (S# i1) (S# i2) = i1 ==# i2
 eqInteger# (Bp# bn1) (Bp# bn2) = bnEq bn1 bn2
@@ -497,9 +497,13 @@ bnEq bn1 bn2 =
         False ->  0#
 
 
--- TODO(SN) implement
+-- | Not-equal operation for Integers. Returns 0# as false and 1# as True
 neqInteger# :: Integer -> Integer -> Int#
-neqInteger# _ _ = case undefined of _ -> 0#
+neqInteger# i1 i2 = 
+  case eqInteger# i1 i2 of
+    0# -> 1#
+    1# -> 0#
+    _  -> 0#
 
 -- TODO(SN) implement
 geInteger# :: Integer -> Integer -> Int#

@@ -153,6 +153,10 @@ main = do
         prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
           isTrue# (X.eqInteger# x1 x1) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
 
+      describe "neqInteger" $ do
+        prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          isTrue# (X.neqInteger# x1 x1 ==# 0#) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
+
               -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
