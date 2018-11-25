@@ -224,14 +224,47 @@ hashInteger :: Integer -> Int#
 hashInteger _ = case undefined of _ -> 0#
 
 -- ** Arithmetic operations
-
--- TODO(SN) implement
 plusInteger :: Integer -> Integer -> Integer
-plusInteger _ _ = undefined
+plusInteger (S# (INT_MINBOUND#)) (S# (INT_MINBOUND#)) = Bn# (wordToBigNum2 (int2Word# 1#) (int2Word# 0#))
+plusInteger (S# x#) (S# y#) =
+  case addIntC# x# y# of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
+plusInteger (S# x) (Bp# y)
+  | isTrue# (x >=# 0#) = Bp# (plusBigNumWord y (int2Word# x))
+  | True = bigNumToInteger (minusBigNumWord y (int2Word# (negateInt# x)))
+plusInteger (S# x) (Bn# y)
+  | isTrue# (x >=# 0#) = bigNumToNegInteger (minusBigNumWord y (int2Word# x))
+  | True = Bn# (plusBigNumWord y (int2Word# (negateInt# x)))
+plusInteger b (S# x) = plusInteger (S# x) b
+plusInteger (Bp# x) (Bp# y) = Bp# (plusBigNum x y)
+plusInteger (Bn# x) (Bn# y) = Bn# (plusBigNum x y)
+plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
+  (bn, False) -> bigNumToInteger bn
+  (bn, True) -> bigNumToNegInteger bn
+plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
 
--- TODO(SN) implement
 minusInteger :: Integer -> Integer -> Integer
-minusInteger _ _ = undefined
+minusInteger (S# x) (S# y) =
+  case subIntC# x y of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
+minusInteger (Bp# x) (S# y)
+  | isTrue# (y >=# 0#) = bigNumToInteger (minusBigNumWord x (int2Word# y))
+  | True = Bp# (plusBigNumWord x (int2Word# (negateInt# y)))
+minusInteger (Bn# x) (S# y)
+  | isTrue# (y >=# 0#) = Bn# (plusBigNumWord x (int2Word# y))
+  | True = bigNumToNegInteger (minusBigNumWord x (int2Word# (negateInt# y)))
+minusInteger (S# x) (Bp# y) = plusInteger (S# x) (Bn# y)
+minusInteger (S# x) (Bn# y) = plusInteger (S# x) (Bp# y)
+minusInteger (Bp# x) (Bp# y) = plusInteger (Bp# x) (Bn# y)
+minusInteger (Bp# x) (Bn# y) = Bp# (plusBigNum x y)
+minusInteger (Bn# x) (Bp# y) = Bn# (plusBigNum x y)
+minusInteger (Bn# x) (Bn# y) = plusInteger (Bp# y) (Bn# x)
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -243,9 +276,14 @@ negateInteger (Bp# bn)
   | True = Bn# bn
 {-# NOINLINE negateInteger #-}
 
--- TODO(SN) implement
+-- Absolute value
 absInteger :: Integer -> Integer
-absInteger _ = undefined
+absInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
+absInteger (S# i)
+  | isTrue# (i >=# 0#) = S# i
+  | True = S# (negateInt# i)
+absInteger (Bp# bn) = Bp# bn
+absInteger (Bn# bn) = Bp# bn
 
 -- TODO(SN) implement
 signumInteger :: Integer -> Integer
@@ -382,11 +420,11 @@ orInteger _ y@(S# -1#) = y
 orInteger (S# a#) (S# b#) = S# (a# `orI#` b#)
 orInteger (Bp# x) (Bp# y) = Bp# (orBigNum x y)
 orInteger (Bn# x) (Bn# y) =
-  bigNumToNegInteger (plusBigNumWord 1# (andBigNum (minusBigNumWord 1# x 1##)
-                                                   (minusBigNumWord 1# y 1##)) 1##)
+  bigNumToNegInteger (minusBigNumWord (andBigNum (plusBigNumWord x 1##)
+                                                   (plusBigNumWord y 1##)) 1##)
 orInteger x@(Bn# _) y@(Bp# _) = orInteger y x -- swap for next case
 orInteger (Bp# x) (Bn# y) =
-  bigNumToNegInteger (plusBigNumWord 1# (andnBigNum (minusBigNumWord 1# y 1##) x) 1##)
+  bigNumToNegInteger (minusBigNumWord (andnBigNum (plusBigNumWord y 1##) x) 1##)
 -- -- TODO/FIXpromotion-hack
 orInteger  x@(S# _) y = orInteger (unsafePromote x) y
 orInteger  x  y@(S# _) = orInteger x (unsafePromote y)
@@ -639,35 +677,68 @@ foreign import ccall unsafe "integer_bn_lshift"
 
 -- ** Arithmetic operations
 
+plusBigNum :: BigNum -> BigNum -> BigNum
+plusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    (I# i#) <- liftIO (bn_add mbr# nr# a# na# b# nb#)
+    shrinkBigNum r i# >>= freezeBigNum
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = (maxInt# na# nb#) +# 1#
+
+minusBigNum :: BigNum -> BigNum -> (BigNum, Bool)
+minusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    ba@(BA# negValue#) <- newByteArray 4#
+    (I# i#) <- liftIO (bn_sub mbr# nr# a# na# b# nb# negValue#)
+    (I# neg#) <- readInt32ByteArray ba
+    bn <- shrinkBigNum r i# >>= freezeBigNum
+    return (bn, isTrue# neg#)
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = maxInt# na# nb#
+
+foreign import ccall unsafe "integer_bn_add"
+  bn_add :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
+
+foreign import ccall unsafe "integer_bn_sub"
+  bn_sub :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> ByteArray# -> IO Int
+
+maxInt# :: Int# -> Int# -> Int#
+maxInt# x# y#
+  | isTrue# (x# >=# y#) = x#
+  | True = y#
+
 -- | Add given Word# to BigNum.
-plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
-               -> BigNum -> Word# -> BigNum
-plusBigNumWord neg# a w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
+plusBigNumWord :: BigNum -> Word# -> BigNum
+plusBigNumWord a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum nr#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_add_word neg# mbr# na# w#)
+  (I# i#) <- liftIO (bn_add_word mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
+   nr# = na# +# 1#
 
 -- size_t integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_add_word"
-  bn_add_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
+  bn_add_word :: MutableByteArray# s -> Int# -> Word# -> IO Int
 
 -- | Subtract given Word# from BigNum.
-minusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
-                -> BigNum -> Word# -> BigNum
-minusBigNumWord neg# a w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
+minusBigNumWord :: BigNum -> Word# -> BigNum
+minusBigNumWord a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum na#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_sub_word neg# mbr# na# w#)
+  (I# i#) <- liftIO (bn_sub_word mbr# na# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
 
 -- size_t integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_sub_word"
-  bn_sub_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
+  bn_sub_word :: MutableByteArray# s -> Int# -> Word# -> IO Int
 
 -- | Multiply given BigNum with given Word#.
 timesBigNumWord :: BigNum -> Word# -> BigNum

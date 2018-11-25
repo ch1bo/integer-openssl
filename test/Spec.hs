@@ -93,6 +93,24 @@ main = do
           let ints = map truncate32pos is
           in  X.mkInteger b ints <<>> Y.mkInteger b ints
 
+      describe "absInteger" $ do
+        it "works for 0" $ do
+          shouldEqualHex (X.absInteger (X.smallInteger 0#)) (Y.smallInteger 0#)
+        it "works for INT_MINBOUND" $ do
+          shouldEqualHex (X.absInteger (X.smallInteger INT_MINBOUND#)) (Y.absInteger (Y.smallInteger INT_MINBOUND#))
+        prop "works for small integers" $ \(SmallInt (I# i)) ->
+          X.absInteger (X.smallInteger i) <<>> Y.absInteger (Y.smallInteger i)
+        prop "works for integers" $ \(Integers x y) ->
+          X.absInteger x <<>> Y.absInteger y
+
+      describe "plusInteger" $ do
+        prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
+
+      describe "minusInteger" $ do
+        prop "can subtract random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          X.minusInteger x1 x2 <<>> Y.minusInteger y1 y2
+
       describe "timesInteger" $ do
         prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
           X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
