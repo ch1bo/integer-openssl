@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <openssl/opensslv.h>
 #include <openssl/bn.h>
 
 // These functions wrap high-level openssl functions to work with word arrays
@@ -7,8 +8,8 @@
 // Furthermore, most functions return the number of actually used words on the
 // modified word array.
 
-typedef struct bignum_st BIGNUM;
 
+#if OPENSSL_VERSION_NUMBER >= 0x101000000L
 struct bignum_st {
     BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
                                  * chunks. */
@@ -19,6 +20,9 @@ struct bignum_st {
     int flags;
 };
 
+typedef struct bignum_st BIGNUM;
+
+#endif
 
 // Macros to shorten BIGNUM declaration
 #define S_BIGNUM(_name, _b, _size, _neg) \
