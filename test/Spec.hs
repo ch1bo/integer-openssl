@@ -44,39 +44,18 @@ import "integer-openssl" GHC.Integer.Type   as X hiding (($))
 
 main :: IO ()
 main = do
-  {-}
-  let --vals = [40000000, 20000000, 4000000, 180000005]
-      vals = [1]
-      x = X.mkInteger False vals 
-      y = Y.mkInteger False vals
   
-      --w = -5##
-      i1 = -5#
-      i2 = 0#
-      i3 = 5#
+  let --vals = [40000000, 20000000, 4000000, 180000005]
+      vals1 = [0]
+      x1 = X.mkInteger True vals1 
+      y1 = Y.mkInteger True vals1
 
-      --z0 = INT_MINBOUND#
-      z0 = -1#
-      z = int2Word# z0
-      z1 = encodeDouble# z i1
-      z2 = encodeDouble# z i2
-      z3 = encodeDouble# z i3
-
-      showN (# zx, ix #) = "(" ++ show (D# zx) ++ ", i=" ++ show (I# ix) ++ ") "
-
-  --putStrLn $ "\nInt: " <> show (I# z0) 
-  --putStrLn $ "\nWord: " <> show (W# z) 
-  putStrLn $ "\n\nencodeDouble: " <> showN (# z1, i1 #) <> showN (# z2, i2 #) <> showN (# z3, i3 #)
- 
-  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i1))
-  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i1))
-
-  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i2))
-  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i2))
-
-  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i3))
-  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i3))
--}
+      vals2 = [0, 0, 2]
+      x2 = X.mkInteger False vals2
+      y2 = Y.mkInteger False vals2
+  
+  putStrLn $ "\n\nX: " <> show (I# (X.eqInteger# x1 x2)) <> "\nY: " <> show (I# (Y.eqInteger# y1 y2))
+      
   hspec $ do
     describe "library vs builtin" $ do
       describe "smallIntger" $ do
@@ -170,7 +149,11 @@ main = do
         prop "works for random Integer" $ \(Integers x1 y1) ->
           isTrue# (X.hashInteger x1 ==# Y.hashInteger y1)
     
-          -- describe "BigNum" $ do
+      describe "eqInteger" $ do
+        prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+          isTrue# (X.eqInteger# x1 x1) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
+
+              -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
 

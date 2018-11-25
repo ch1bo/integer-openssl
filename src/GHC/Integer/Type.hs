@@ -473,7 +473,29 @@ compareInteger _ _ = undefined
 
 -- TODO(SN) implement
 eqInteger# :: Integer -> Integer -> Int#
-eqInteger# _ _ = case undefined of _ -> 0#
+eqInteger# (S# i1) (S# i2) = i1 ==# i2
+eqInteger# (Bp# bn1) (Bp# bn2) = bnEq bn1 bn2
+eqInteger# (Bn# bn1) (Bn# bn2) = bnEq bn1 bn2
+eqInteger# _ _ = 0#
+
+bnEq :: BigNum -> BigNum -> Int#
+bnEq bn1 bn2 = 
+  let wib1 = wordsInBigNum# bn1
+      wib2 = wordsInBigNum# bn2 in
+  case isTrue# (wib1 ==# wib2) of
+    True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
+    False -> 0#
+  where
+    bnEq2 0# 0# = bigNumIdx bn1 0# `eqWord#` bigNumIdx bn2 0#
+    bnEq2 0# _ = 0#
+    bnEq2 _ 0# = 0#
+    bnEq2 !idx1 !idx2 = 
+      let w1 = bigNumIdx bn1 idx1
+          w2 = bigNumIdx bn2 idx2 in
+      case isTrue# (w1 `eqWord#` w2) of 
+        True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
+        False ->  0#
+
 
 -- TODO(SN) implement
 neqInteger# :: Integer -> Integer -> Int#
