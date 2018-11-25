@@ -104,7 +104,7 @@ wordToNegInteger w#
     i# = negateInt# (word2Int# w#)
 -- inlinable as only internally used
 
--- | Truncates to least significant
+-- | Truncates to least significant.
 integerToWord :: Integer -> Word#
 integerToWord (S# i#) = int2Word# i#
 integerToWord (Bp# bn) = bigNumToWord bn
@@ -127,7 +127,7 @@ doubleFromInteger (Bp# bn) = doubleFromPositive bn
 doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn)
 {-# NOINLINE doubleFromInteger #-}
 
--- | helper function to convert a positive Integer into a Double#
+-- | Helper function to convert a positive Integer into a Double#.
 doubleFromPositive :: BigNum -> Double#
 doubleFromPositive bn = doubleFromPositive' bn 0#
   where
@@ -143,14 +143,13 @@ doubleFromPositive bn = doubleFromPositive' bn 0#
                       +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
                       +## int2Double# (word2Int# l)
 
--- | splits the given Word# into a high- and a low-word
+-- | Splits the given Word# into a high- and a low-word.
 splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
 splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
                       x `and#` LOW_HALF_MASK## #)
 
 -- | encodes the given integer into a double with the given exponent.
 -- | encodeDoubleInteger i e = i * 2 ^ e
-{-# NOINLINE encodeDoubleInteger #-}
 encodeDoubleInteger :: Integer -> Int# -> Double#
 encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
 encodeDoubleInteger (S# INT_MINBOUND#) e0 = encodeDouble# (int2Word# INT_MINBOUND#) e0
@@ -172,20 +171,18 @@ encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
               f newAcc newIdx newE
 encodeDoubleInteger (Bn# bn) e0 =
   negateDouble# (encodeDoubleInteger (Bp# bn) e0)
+{-# NOINLINE encodeDoubleInteger #-}
 
 -- | __word_encodeDouble does simply do some preparations and then
 -- calls 'ldexp p1 p2' in C
 foreign import ccall unsafe "__word_encodeDouble"
-        encodeDouble# :: Word# -> Int# -> Double#
+  encodeDouble# :: Word# -> Int# -> Double#
 
 -- | Same as encodeDoubleInteger, but for Float#
-{-# NOINLINE encodeFloatInteger #-}
 encodeFloatInteger :: Integer -> Int# -> Float#
 encodeFloatInteger i e = double2Float# (encodeDoubleInteger i e)
+{-# NOINLINE encodeFloatInteger #-}
 
-
-
-{-# NOINLINE decodeDoubleInteger #-}
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
 decodeDoubleInteger d =
 #if WORD_SIZE_IN_BITS == 64
@@ -207,19 +204,18 @@ decodeDoubleInteger d =
              `plusInteger` wordToInteger mantLow),
           exp #)
 #endif
+{-# NOINLINE decodeDoubleInteger #-}
 
-{-# NOINLINE decodeFloatInteger #-}
 decodeFloatInteger :: Float# -> (# Integer, Int# #)
-decodeFloatInteger f = case decodeFloat_Int# f of
-                       (# mant, exp #) -> (# smallInteger mant, exp #)
+decodeFloatInteger f = case decodeFloat_Int# f of (# mant, exp #) -> (# smallInteger mant, exp #)
+{-# NOINLINE decodeFloatInteger #-}
 
-
--- TODO(SN) implement
-{-# NOINLINE hashInteger #-}
 hashInteger :: Integer -> Int#
 hashInteger = integerToInt
+{-# NOINLINE hashInteger #-}
 
 -- ** Arithmetic operations
+
 plusInteger :: Integer -> Integer -> Integer
 plusInteger (S# (INT_MINBOUND#)) (S# (INT_MINBOUND#)) = Bn# (wordToBigNum2 (int2Word# 1#) (int2Word# 0#))
 plusInteger (S# x#) (S# y#) =
@@ -272,7 +268,7 @@ negateInteger (Bp# bn)
   | True = Bn# bn
 {-# NOINLINE negateInteger #-}
 
--- Absolute value
+-- | Absolute value of integer.
 absInteger :: Integer -> Integer
 absInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
 absInteger (S# i)
@@ -281,7 +277,6 @@ absInteger (S# i)
 absInteger (Bp# bn) = Bp# bn
 absInteger (Bn# bn) = Bp# bn
 
--- TODO(SN) implement
 signumInteger :: Integer -> Integer
 signumInteger (S# 0#) = (S# 0#)
 signumInteger (S# i)
@@ -412,6 +407,7 @@ andInteger _ = undefined
 xorInteger :: Integer -> Integer -> Integer
 xorInteger _ _ = undefined
 
+-- TODO(SN): test, not correct?
 -- | Bitwise OR of Integers.
 orInteger :: Integer -> Integer -> Integer
 -- short-cuts
@@ -466,31 +462,12 @@ testBitInteger _ _ = undefined
 compareInteger :: Integer -> Integer -> Ordering
 compareInteger _ _ = undefined
 
--- | Equal operation for Integers. Returns 0# as false and 1# as True
+-- | Equal operation for Integers. Returns 0# as False and 1# as True
 eqInteger# :: Integer -> Integer -> Int#
 eqInteger# (S# i1) (S# i2) = i1 ==# i2
-eqInteger# (Bp# bn1) (Bp# bn2) = bnEq bn1 bn2
-eqInteger# (Bn# bn1) (Bn# bn2) = bnEq bn1 bn2
+eqInteger# (Bp# bn1) (Bp# bn2) = eqBigNum# bn1 bn2
+eqInteger# (Bn# bn1) (Bn# bn2) = eqBigNum# bn1 bn2
 eqInteger# _ _ = 0#
-
-bnEq :: BigNum -> BigNum -> Int#
-bnEq bn1 bn2 =
-  let wib1 = wordsInBigNum# bn1
-      wib2 = wordsInBigNum# bn2 in
-  case isTrue# (wib1 ==# wib2) of
-    True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
-    False -> 0#
-  where
-    bnEq2 0# 0# = bigNumIdx bn1 0# `eqWord#` bigNumIdx bn2 0#
-    bnEq2 0# _ = 0#
-    bnEq2 _ 0# = 0#
-    bnEq2 !idx1 !idx2 =
-      let w1 = bigNumIdx bn1 idx1
-          w2 = bigNumIdx bn2 idx2 in
-      case isTrue# (w1 `eqWord#` w2) of
-        True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
-        False ->  0#
-
 
 -- | Not-equal operation for Integers. Returns 0# as false and 1# as True
 neqInteger# :: Integer -> Integer -> Int#
@@ -620,10 +597,29 @@ bigNumToNegInteger bn
 wordsInBigNum# :: BigNum -> Int#
 wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIFT#
 
--- | Return @1#@ iff BigNum holds one 'Word#' equal to given 'Word#'.
+-- | Return '1#' iff BigNum holds one 'Word#' equal to given 'Word#'.
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
   (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` w#)
+
+-- | Return '1#' iff the two 'BigNum' are equal.
+eqBigNum# :: BigNum -> BigNum -> Int#
+eqBigNum# bn1 bn2 =
+  let wib1 = wordsInBigNum# bn1
+      wib2 = wordsInBigNum# bn2 in
+  case isTrue# (wib1 ==# wib2) of
+    True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
+    False -> 0#
+  where
+    bnEq2 0# 0# = bigNumIdx bn1 0# `eqWord#` bigNumIdx bn2 0#
+    bnEq2 0# _ = 0#
+    bnEq2 _ 0# = 0#
+    bnEq2 !idx1 !idx2 =
+      let w1 = bigNumIdx bn1 idx1
+          w2 = bigNumIdx bn2 idx2 in
+      case isTrue# (w1 `eqWord#` w2) of
+        True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
+        False ->  0#
 
 -- | Return @1#@ iff BigNum holds one 'Word#' equal to 0##
 isZeroBigNum# :: BigNum -> Int#
@@ -722,6 +718,9 @@ plusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
     nb# = wordsInBigNum# b
     nr# = (maxInt# na# nb#) +# 1#
 
+foreign import ccall unsafe "integer_bn_add"
+  bn_add :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
+
 minusBigNum :: BigNum -> BigNum -> (BigNum, Bool)
 minusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
     r@(MBN# mbr#) <- newBigNum nr#
@@ -734,9 +733,6 @@ minusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
     na# = wordsInBigNum# a
     nb# = wordsInBigNum# b
     nr# = maxInt# na# nb#
-
-foreign import ccall unsafe "integer_bn_add"
-  bn_add :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
 
 foreign import ccall unsafe "integer_bn_sub"
   bn_sub :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> ByteArray# -> IO Int

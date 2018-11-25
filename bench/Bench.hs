@@ -32,6 +32,34 @@ main = defaultMain
       , bench "builtin" $ whnf encodeDoubleIntegerY (big4096, 0)
       ]
     ]
+  , bgroup "plusInteger"
+    [ bgroup "small"
+      [ bench "library" $ whnf plusIntegerX (small, small_)
+      , bench "builtin" $ whnf plusIntegerY (small, small_)
+      ]
+    , bgroup "128bit"
+      [ bench "library" $ whnf plusIntegerX (big128, big128_)
+      , bench "builtin" $ whnf plusIntegerY (big128, big128_)
+      ]
+    , bgroup "4096bit"
+      [ bench "library" $ whnf plusIntegerX (big4096, big4096_)
+      , bench "builtin" $ whnf plusIntegerY (big4096, big4096_)
+      ]
+    ]
+  , bgroup "minusInteger"
+    [ bgroup "small"
+      [ bench "library" $ whnf minusIntegerX (small, small_)
+      , bench "builtin" $ whnf minusIntegerY (small, small_)
+      ]
+    , bgroup "128bit"
+      [ bench "library" $ whnf minusIntegerX (big128, big128_)
+      , bench "builtin" $ whnf minusIntegerY (big128, big128_)
+      ]
+    , bgroup "4096bit"
+      [ bench "library" $ whnf minusIntegerX (big4096, big4096_)
+      , bench "builtin" $ whnf minusIntegerY (big4096, big4096_)
+      ]
+    ]
   , bgroup "timesInteger"
     [ bgroup "small"
       [ bench "library" $ whnf timesIntegerX (small, small_)
@@ -72,8 +100,14 @@ main = defaultMain
   encodeDoubleIntegerX = encodeDoubleIntegerBench X.mkInteger X.encodeDoubleInteger
   encodeDoubleIntegerY = encodeDoubleIntegerBench Y.mkInteger Y.encodeDoubleInteger
 
-  timesIntegerX = timesIntegerBench X.mkInteger X.timesInteger
-  timesIntegerY = timesIntegerBench Y.mkInteger Y.timesInteger
+  plusIntegerX = integer2Bench X.mkInteger X.plusInteger
+  plusIntegerY = integer2Bench Y.mkInteger Y.plusInteger
+
+  minusIntegerX = integer2Bench X.mkInteger X.minusInteger
+  minusIntegerY = integer2Bench Y.mkInteger Y.minusInteger
+
+  timesIntegerX = integer2Bench X.mkInteger X.timesInteger
+  timesIntegerY = integer2Bench Y.mkInteger Y.timesInteger
 
   quotRemIntegerX = quotRemIntegerBench X.mkInteger X.quotRemInteger
   quotRemIntegerY = quotRemIntegerBench Y.mkInteger Y.quotRemInteger
@@ -84,15 +118,13 @@ type IntegerBench = (Bool, [Int])
 mkIntegerBench :: (Bool -> [Int] -> a) -> (Bool, [Int]) -> a
 mkIntegerBench mkInteger (p, is) = mkInteger p is
 
+integer2Bench :: (Bool -> [Int] -> a) -> (a -> a -> a)
+                  -> (IntegerBench, IntegerBench) -> a
+integer2Bench mkInteger f ((p, is), (p2, is2)) = f (mkInteger p is) (mkInteger p2 is2)
+
 encodeDoubleIntegerBench :: (Bool -> [Int] -> a) -> (a -> Int# -> Double#)
                          -> (IntegerBench, Int) -> Double
-encodeDoubleIntegerBench mkInteger f ((p, is), (I# i#)) =
-  D# (f (mkInteger p is) i#)
-
-timesIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> a)
-                  -> (IntegerBench, IntegerBench) -> a
-timesIntegerBench mkInteger timesInteger ((p, is), (p2, is2)) =
-  timesInteger (mkInteger p is) (mkInteger p2 is2)
+encodeDoubleIntegerBench mkInteger f ((p, is), (I# i#)) = D# (f (mkInteger p is) i#)
 
 quotRemIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> (# a, a #))
                   -> (IntegerBench, IntegerBench) -> (a, a)

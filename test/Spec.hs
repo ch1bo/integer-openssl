@@ -57,44 +57,6 @@ main = hspec $ do
       let ints = map truncate32pos is
       in  X.mkInteger b ints <<>> Y.mkInteger b ints
 
-  describe "absInteger" $ do
-    it "works for 0" $ do
-      shouldEqualHex (X.absInteger (X.smallInteger 0#)) (Y.smallInteger 0#)
-    it "works for INT_MINBOUND" $ do
-      shouldEqualHex (X.absInteger (X.smallInteger INT_MINBOUND#)) (Y.absInteger (Y.smallInteger INT_MINBOUND#))
-    prop "works for small integers" $ \(SmallInt (I# i)) ->
-      X.absInteger (X.smallInteger i) <<>> Y.absInteger (Y.smallInteger i)
-    prop "works for integers" $ \(Integers x y) ->
-      X.absInteger x <<>> Y.absInteger y
-
-  describe "plusInteger" $ do
-    prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
-      X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
-
-  describe "minusInteger" $ do
-    prop "can subtract random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
-      X.minusInteger x1 x2 <<>> Y.minusInteger y1 y2
-
-  describe "timesInteger" $ do
-    prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
-      X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
-
-  describe "quotRemInteger" $ do
-    -- division by zero cannot be tested properly here
-    prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
-      let (# xq, qr #) = X.quotRemInteger x1 x2
-          (# yq, yr #) = Y.quotRemInteger y1 y2
-      in xq <<>> yq
-
-  describe "negateInteger" $ do
-    it "considers min bound Int" $
-      shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
-                    (Y.negateInteger $ Y.smallInteger INT_MINBOUND#)
-
-  describe "shiftLInteger" $ do
-    prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
-      X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
-
   describe "wordToInteger" $ do
     prop "works for random Word#" $ \(Positive (W# c#)) ->
       X.wordToInteger c# <<>> Y.wordToInteger c#
@@ -126,13 +88,51 @@ main = hspec $ do
       in
         showHexX m1 == showHexY m2 && isTrue# (e1 ==# e2)
 
+  describe "hashInteger" $ do
+    prop "works for random Integer" $ \(Integers x1 y1) ->
+      isTrue# (X.hashInteger x1 ==# Y.hashInteger y1)
+
+  describe "plusInteger" $ do
+    prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+      X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
+
+  describe "minusInteger" $ do
+    prop "can subtract random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+      X.minusInteger x1 x2 <<>> Y.minusInteger y1 y2
+
+  describe "negateInteger" $ do
+    it "considers min bound Int" $
+      shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
+                    (Y.negateInteger $ Y.smallInteger INT_MINBOUND#)
+
+  describe "absInteger" $ do
+    it "works for 0" $ do
+      shouldEqualHex (X.absInteger (X.smallInteger 0#)) (Y.smallInteger 0#)
+    it "works for INT_MINBOUND" $ do
+      shouldEqualHex (X.absInteger (X.smallInteger INT_MINBOUND#)) (Y.absInteger (Y.smallInteger INT_MINBOUND#))
+    prop "works for small integers" $ \(SmallInt (I# i)) ->
+      X.absInteger (X.smallInteger i) <<>> Y.absInteger (Y.smallInteger i)
+    prop "works for integers" $ \(Integers x y) ->
+      X.absInteger x <<>> Y.absInteger y
+
   describe "signumInteger" $ do
     prop "works for random Integer" $ \(Integers x1 y1) ->
       X.signumInteger x1 <<>> Y.signumInteger y1
 
-  describe "hashInteger" $ do
-    prop "works for random Integer" $ \(Integers x1 y1) ->
-      isTrue# (X.hashInteger x1 ==# Y.hashInteger y1)
+  describe "timesInteger" $ do
+    prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+      X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
+
+  describe "quotRemInteger" $ do
+    -- division by zero cannot be tested properly here
+    prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
+      let (# xq, qr #) = X.quotRemInteger x1 x2
+          (# yq, yr #) = Y.quotRemInteger y1 y2
+      in xq <<>> yq
+
+  describe "shiftLInteger" $ do
+    prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
+      X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
 
   describe "eqInteger" $ do
     prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
