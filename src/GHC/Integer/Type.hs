@@ -188,9 +188,36 @@ foreign import ccall unsafe "__word_encodeDouble"
 encodeFloatInteger :: Integer -> Int# -> Float#
 encodeFloatInteger i e = double2Float# (encodeDoubleInteger i e)
 
--- TODO(SN) implement
+
+
+{-# NOINLINE decodeDoubleInteger #-}
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
-decodeDoubleInteger _ = (# undefined, 0# #)
+decodeDoubleInteger d = 
+#if WORD_SIZE_IN_BITS == 64
+  case decodeDouble_2Int# d of
+    (# mantSign, mantHigh, mantLow, exp #) -> 
+      let mant = (uncheckedShiftL# mantHigh HIGH_HALF_SHIFT#) `or#` mantLow
+          bn = wordToBigNum mant
+          int = 
+            case isTrue# (mantSign ==# 1#) of
+              True -> bigNumToInteger bn
+              False -> bigNumToNegInteger bn
+      in
+        (# int, exp #)
+#elif WORD_SIZE_IN_BITS == 32
+  case decodeDouble_2Int# d of
+   (# mantSign, mantHigh, mantLow, exp #) ->
+       (# (smallInteger mantSign) `timesInteger`
+          (  (wordToInteger mantHigh `timesInteger` twoToTheThirtytwoInteger)
+             `plusInteger` wordToInteger mantLow),
+          exp #)
+#endif
+
+{-# NOINLINE decodeFloatInteger #-}
+decodeFloatInteger :: Float# -> (# Integer, Int# #)
+decodeFloatInteger f = case decodeFloat_Int# f of
+                       (# mant, exp #) -> (# smallInteger mant, exp #)
+
 
 -- TODO(SN) implement
 hashInteger :: Integer -> Int#

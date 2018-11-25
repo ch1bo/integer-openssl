@@ -137,7 +137,16 @@ main = do
         prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
           isTrue# (X.encodeFloatInteger x1 i `eqFloat#` Y.encodeFloatInteger y1 i)
               
-    -- describe "BigNum" $ do
+      describe "decodeDoubleInteger" $ do
+        prop "works for random Double" $ \(D# x1)  ->
+          let (# m1, e1 #) = X.decodeDoubleInteger x1 
+              (# m2, e2 #) = Y.decodeDoubleInteger x1
+          in
+            showHexX m1 == showHexY m2 && isTrue# (e1 ==# e2)
+
+
+
+          -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
 
