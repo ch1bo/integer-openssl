@@ -44,21 +44,39 @@ import "integer-openssl" GHC.Integer.Type   as X hiding (($))
 
 main :: IO ()
 main = do
-
+  {-}
   let --vals = [40000000, 20000000, 4000000, 180000005]
-      vals = [3, 1]
+      vals = [1]
       x = X.mkInteger False vals 
       y = Y.mkInteger False vals
   
-      w = 5##
-      i = -5#
- 
-  -- putStrLn $ "\nencodeDouble#: 5 " <> show (D# (X.encodeDoubleInteger x -2#))
-  --   <> "\nencodeDouble#: -5 " <> show (D# (encodeDouble# (int2Word# i) -2#))
- 
-  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x -1#))
-  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y -1#))
+      --w = -5##
+      i1 = -5#
+      i2 = 0#
+      i3 = 5#
 
+      --z0 = INT_MINBOUND#
+      z0 = -1#
+      z = int2Word# z0
+      z1 = encodeDouble# z i1
+      z2 = encodeDouble# z i2
+      z3 = encodeDouble# z i3
+
+      showN (# zx, ix #) = "(" ++ show (D# zx) ++ ", i=" ++ show (I# ix) ++ ") "
+
+  --putStrLn $ "\nInt: " <> show (I# z0) 
+  --putStrLn $ "\nWord: " <> show (W# z) 
+  putStrLn $ "\n\nencodeDouble: " <> showN (# z1, i1 #) <> showN (# z2, i2 #) <> showN (# z3, i3 #)
+ 
+  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i1))
+  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i1))
+
+  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i2))
+  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i2))
+
+  putStrLn $ "\nX.encodeDoubleInteger: " <> showHexX x <> " = " <> show (D# (X.encodeDoubleInteger x i3))
+  putStrLn $ "Y.encodeDoubleInteger: " <> showHexY y <> " = " <> show (D# (Y.encodeDoubleInteger y i3))
+-}
   hspec $ do
     describe "library vs builtin" $ do
       describe "smallIntger" $ do

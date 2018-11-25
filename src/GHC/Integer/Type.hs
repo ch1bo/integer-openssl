@@ -116,7 +116,8 @@ integerToWord (Bn# bn) = int2Word# (negateInt# (bigNumToInt bn))
 integerToInt :: Integer -> Int#
 integerToInt (S# i#) = i#
 integerToInt (Bp# bn) = bigNumToInt bn
-integerToInt (Bn# bn) = negateInt# (bigNumToInt bn)
+integerToInt (Bn# bn) = negateInt# (bigNumToInt bn)  
+
 {-# NOINLINE integerToInt #-}
 
 floatFromInteger :: Integer -> Float#
@@ -135,7 +136,7 @@ doubleFromPositive :: BigNum -> Double#
 doubleFromPositive bn = doubleFromPositive' bn 0#
   where
     doubleFromPositive' bn !idx = 
-      let n = wordsInBigNum# bn 
+      let n = wordsInBigNum# bn
           newIdx = idx +# 1# in
       case isTrue# (idx ==# n) of
         True ->  0.0##
@@ -155,9 +156,10 @@ splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
       -- TODO(SN) implement
 {-# NOINLINE encodeDoubleInteger #-}
 encodeDoubleInteger :: Integer -> Int# -> Double#
+encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
+encodeDoubleInteger (S# INT_MINBOUND#) e0 = encodeDouble# (int2Word# INT_MINBOUND#) e0
 encodeDoubleInteger (S# i) e0 
   | isTrue# (i >=# 0#) = encodeDouble# (int2Word# i) e0 
-  | isTrue# (i ==# INT_MINBOUND#) = (encodeDouble# (int2Word# (negateInt# i)) e0)
   | True = negateDouble# (encodeDouble# (int2Word# (negateInt# i)) e0)
 encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
     where
@@ -173,7 +175,7 @@ encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
               in
               f newAcc newIdx newE
 encodeDoubleInteger (Bn# bn) e0 = 
-  (encodeDoubleInteger (Bp# bn) e0)
+  negateDouble# (encodeDoubleInteger (Bp# bn) e0)
 
 {-encodeDoubleInteger :: Integer -> Int# -> Double#
 encodeDoubleInteger (Positive ds0) e0 = f 0.0## ds0 e0
