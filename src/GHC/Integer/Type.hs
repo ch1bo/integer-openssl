@@ -26,18 +26,23 @@ import GHC.Types
 --  - 32-bit support
 --  - additional Integer operations: gcdInteger, lcmInteger, bitInteger
 
+
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
 # define INT_MAXBOUND       0x7fffffffffffffff
 # define ABS_INT_MINBOUND   0x8000000000000000
 # define WORD_SIZE_IN_BYTES 8
 # define WORD_SHIFT         3
+# define HIGH_HALF_SHIFT    32
+# define LOW_HALF_MASK      0xffffffff
 #elif WORD_SIZE_IN_BITS == 32
 # define INT_MINBOUND       -0x80000000
 # define INT_MAXBOUND       0x7fffffff
 # define ABS_INT_MINBOUND   0x80000000
 # define WORD_SIZE_IN_BYTES 4
 # define WORD_SHIFT         2
+# define HIGH_HALF_SHIFT    16
+# define LOW_HALF_MASK      0xffff
 #else
 # error unsupported WORD_SIZE_IN_BITS config
 #endif
@@ -112,39 +117,151 @@ integerToInt (Bp# bn) = bigNumToInt bn
 integerToInt (Bn# bn) = negateInt# (bigNumToInt bn)
 {-# NOINLINE integerToInt #-}
 
--- TODO(SN) implement
 floatFromInteger :: Integer -> Float#
-floatFromInteger _ = case undefined of _ -> 0.0#
+floatFromInteger i = double2Float# (doubleFromInteger i)
+{-# NOINLINE floatFromInteger #-}
 
--- TODO(SN) implement
 doubleFromInteger :: Integer -> Double#
-doubleFromInteger _ = case undefined of _ -> 0.0##
+doubleFromInteger (S# i#) = int2Double# i#
+doubleFromInteger (Bp# bn) = doubleFromPositive bn
+doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn) 
+{-# NOINLINE doubleFromInteger #-}
+       
+-- | helper function to convert a positive Integer into a Double#
+doubleFromPositive :: BigNum -> Double#
+doubleFromPositive bn = doubleFromPositive' bn 0#
+  where
+    doubleFromPositive' bn !idx = 
+      let n = wordsInBigNum# bn
+          newIdx = idx +# 1# in
+      case isTrue# (idx ==# n) of
+        True ->  0.0##
+        _ -> case bigNumIdx bn idx of
+                x -> case splitHalves x of
+                  (# h, l #) -> (doubleFromPositive' bn newIdx) 
+                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
+                      +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
+                      +## int2Double# (word2Int# l)
 
--- TODO(SN) implement
-encodeFloatInteger :: Integer -> Int# -> Float#
-encodeFloatInteger _ _ = case undefined of _ -> 0.0#
+-- | splits the given Word# into a high- and a low-word
+splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
+splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
+                      x `and#` LOW_HALF_MASK## #)
+                      
 
--- TODO(SN) implement
+-- | encodes the given integer into a double with the given exponent.
+-- | encodeDoubleInteger i e = i * 2 ^ e
+{-# NOINLINE encodeDoubleInteger #-}
 encodeDoubleInteger :: Integer -> Int# -> Double#
-encodeDoubleInteger _ _ = case undefined of _ -> 0.0##
+encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
+encodeDoubleInteger (S# INT_MINBOUND#) e0 = encodeDouble# (int2Word# INT_MINBOUND#) e0
+encodeDoubleInteger (S# i) e0 
+  | isTrue# (i >=# 0#) = encodeDouble# (int2Word# i) e0 
+  | True = negateDouble# (encodeDouble# (int2Word# (negateInt# i)) e0)
+encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
+    where
+      f !acc !idx !e =
+        let n = wordsInBigNum# bn 
+            newIdx = idx +# 1# in
+        case isTrue# (idx ==# n) of
+          True -> acc
+          _ -> 
+              let d = bigNumIdx bn idx 
+                  newAcc = acc +## encodeDouble# d e
+                  newE = e +# WORD_SIZE_IN_BITS# 
+              in
+              f newAcc newIdx newE
+encodeDoubleInteger (Bn# bn) e0 = 
+  negateDouble# (encodeDoubleInteger (Bp# bn) e0)
 
--- TODO(SN) implement
+-- | __word_encodeDouble does simply do some preparations and then
+-- calls 'ldexp p1 p2' in C
+foreign import ccall unsafe "__word_encodeDouble"
+        encodeDouble# :: Word# -> Int# -> Double#
+
+-- | Same as encodeDoubleInteger, but for Float#
+{-# NOINLINE encodeFloatInteger #-}
+encodeFloatInteger :: Integer -> Int# -> Float#
+encodeFloatInteger i e = double2Float# (encodeDoubleInteger i e)
+
+
+
+{-# NOINLINE decodeDoubleInteger #-}
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
-decodeDoubleInteger _ = (# undefined, 0# #)
+decodeDoubleInteger d = 
+#if WORD_SIZE_IN_BITS == 64
+  case decodeDouble_2Int# d of
+    (# mantSign, mantHigh, mantLow, exp #) -> 
+      let mant = (uncheckedShiftL# mantHigh HIGH_HALF_SHIFT#) `or#` mantLow
+          bn = wordToBigNum mant
+          int = 
+            case isTrue# (mantSign ==# 1#) of
+              True -> bigNumToInteger bn
+              False -> bigNumToNegInteger bn
+      in
+        (# int, exp #)
+#elif WORD_SIZE_IN_BITS == 32
+  case decodeDouble_2Int# d of
+   (# mantSign, mantHigh, mantLow, exp #) ->
+       (# (smallInteger mantSign) `timesInteger`
+          (  (wordToInteger mantHigh `timesInteger` twoToTheThirtytwoInteger)
+             `plusInteger` wordToInteger mantLow),
+          exp #)
+#endif
+
+{-# NOINLINE decodeFloatInteger #-}
+decodeFloatInteger :: Float# -> (# Integer, Int# #)
+decodeFloatInteger f = case decodeFloat_Int# f of
+                       (# mant, exp #) -> (# smallInteger mant, exp #)
+
 
 -- TODO(SN) implement
+{-# NOINLINE hashInteger #-}
 hashInteger :: Integer -> Int#
-hashInteger _ = case undefined of _ -> 0#
+hashInteger = integerToInt
 
 -- ** Arithmetic operations
-
--- TODO(SN) implement
 plusInteger :: Integer -> Integer -> Integer
-plusInteger _ _ = undefined
+plusInteger (S# (INT_MINBOUND#)) (S# (INT_MINBOUND#)) = Bn# (wordToBigNum2 (int2Word# 1#) (int2Word# 0#))
+plusInteger (S# x#) (S# y#) =
+  case addIntC# x# y# of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
+plusInteger (S# x) (Bp# y)
+  | isTrue# (x >=# 0#) = Bp# (plusBigNumWord y (int2Word# x))
+  | True = bigNumToInteger (minusBigNumWord y (int2Word# (negateInt# x)))
+plusInteger (S# x) (Bn# y)
+  | isTrue# (x >=# 0#) = bigNumToNegInteger (minusBigNumWord y (int2Word# x))
+  | True = Bn# (plusBigNumWord y (int2Word# (negateInt# x)))
+plusInteger b (S# x) = plusInteger (S# x) b
+plusInteger (Bp# x) (Bp# y) = Bp# (plusBigNum x y)
+plusInteger (Bn# x) (Bn# y) = Bn# (plusBigNum x y)
+plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
+  (bn, False) -> bigNumToInteger bn
+  (bn, True) -> bigNumToNegInteger bn
+plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
 
--- TODO(SN) implement
 minusInteger :: Integer -> Integer -> Integer
-minusInteger _ _ = undefined
+minusInteger (S# x) (S# y) =
+  case subIntC# x y of
+    (# z#, 0# #) -> S# z#
+    (# z#, _ #)
+      | isTrue# (z# >=# 0#) -> Bn# (wordToBigNum (int2Word# (negateInt# z#)))
+      | True -> Bp# (wordToBigNum (int2Word# z#))
+minusInteger (Bp# x) (S# y)
+  | isTrue# (y >=# 0#) = bigNumToInteger (minusBigNumWord x (int2Word# y))
+  | True = Bp# (plusBigNumWord x (int2Word# (negateInt# y)))
+minusInteger (Bn# x) (S# y)
+  | isTrue# (y >=# 0#) = Bn# (plusBigNumWord x (int2Word# y))
+  | True = bigNumToNegInteger (minusBigNumWord x (int2Word# (negateInt# y)))
+minusInteger (S# x) (Bp# y) = plusInteger (S# x) (Bn# y)
+minusInteger (S# x) (Bn# y) = plusInteger (S# x) (Bp# y)
+minusInteger (Bp# x) (Bp# y) = plusInteger (Bp# x) (Bn# y)
+minusInteger (Bp# x) (Bn# y) = Bp# (plusBigNum x y)
+minusInteger (Bn# x) (Bp# y) = Bn# (plusBigNum x y)
+minusInteger (Bn# x) (Bn# y) = plusInteger (Bp# y) (Bn# x)
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -156,13 +273,25 @@ negateInteger (Bp# bn)
   | True = Bn# bn
 {-# NOINLINE negateInteger #-}
 
--- TODO(SN) implement
+-- Absolute value
 absInteger :: Integer -> Integer
-absInteger _ = undefined
+absInteger (S# INT_MINBOUND#) = Bp# (wordToBigNum ABS_INT_MINBOUND##)
+absInteger (S# i)
+  | isTrue# (i >=# 0#) = S# i
+  | True = S# (negateInt# i)
+absInteger (Bp# bn) = Bp# bn
+absInteger (Bn# bn) = Bp# bn
 
 -- TODO(SN) implement
 signumInteger :: Integer -> Integer
-signumInteger _ = undefined
+signumInteger (S# 0#) = (S# 0#)
+signumInteger (S# i) 
+  | isTrue# (i ># 0#) = (S# 1#)
+  | True = (S# (-1#))
+signumInteger (Bp# bn)
+  | isTrue# (isZeroBigNum# bn) = (S# 0#)
+  | True = (S# 1#)
+signumInteger (Bn# bn) = (S# (-1#))
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
@@ -295,11 +424,11 @@ orInteger _ y@(S# -1#) = y
 orInteger (S# a#) (S# b#) = S# (a# `orI#` b#)
 orInteger (Bp# x) (Bp# y) = Bp# (orBigNum x y)
 orInteger (Bn# x) (Bn# y) =
-  bigNumToNegInteger (plusBigNumWord 1# (andBigNum (minusBigNumWord 1# x 1##)
-                                                   (minusBigNumWord 1# y 1##)) 1##)
+  bigNumToNegInteger (minusBigNumWord (andBigNum (plusBigNumWord x 1##)
+                                                   (plusBigNumWord y 1##)) 1##)
 orInteger x@(Bn# _) y@(Bp# _) = orInteger y x -- swap for next case
 orInteger (Bp# x) (Bn# y) =
-  bigNumToNegInteger (plusBigNumWord 1# (andnBigNum (minusBigNumWord 1# y 1##) x) 1##)
+  bigNumToNegInteger (minusBigNumWord (andnBigNum (plusBigNumWord y 1##) x) 1##)
 -- -- TODO/FIXpromotion-hack
 orInteger  x@(S# _) y = orInteger (unsafePromote x) y
 orInteger  x  y@(S# _) = orInteger x (unsafePromote y)
@@ -338,13 +467,39 @@ testBitInteger _ _ = undefined
 compareInteger :: Integer -> Integer -> Ordering
 compareInteger _ _ = undefined
 
--- TODO(SN) implement
+-- | Equal operation for Integers. Returns 0# as false and 1# as True
 eqInteger# :: Integer -> Integer -> Int#
-eqInteger# _ _ = case undefined of _ -> 0#
+eqInteger# (S# i1) (S# i2) = i1 ==# i2
+eqInteger# (Bp# bn1) (Bp# bn2) = bnEq bn1 bn2
+eqInteger# (Bn# bn1) (Bn# bn2) = bnEq bn1 bn2
+eqInteger# _ _ = 0#
 
--- TODO(SN) implement
+bnEq :: BigNum -> BigNum -> Int#
+bnEq bn1 bn2 = 
+  let wib1 = wordsInBigNum# bn1
+      wib2 = wordsInBigNum# bn2 in
+  case isTrue# (wib1 ==# wib2) of
+    True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
+    False -> 0#
+  where
+    bnEq2 0# 0# = bigNumIdx bn1 0# `eqWord#` bigNumIdx bn2 0#
+    bnEq2 0# _ = 0#
+    bnEq2 _ 0# = 0#
+    bnEq2 !idx1 !idx2 = 
+      let w1 = bigNumIdx bn1 idx1
+          w2 = bigNumIdx bn2 idx2 in
+      case isTrue# (w1 `eqWord#` w2) of 
+        True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
+        False ->  0#
+
+
+-- | Not-equal operation for Integers. Returns 0# as false and 1# as True
 neqInteger# :: Integer -> Integer -> Int#
-neqInteger# _ _ = case undefined of _ -> 0#
+neqInteger# i1 i2 = 
+  case eqInteger# i1 i2 of
+    0# -> 1#
+    1# -> 0#
+    _  -> 0#
 
 -- TODO(SN) implement
 geInteger# :: Integer -> Integer -> Int#
@@ -437,6 +592,9 @@ wordToBigNum2 h# l# = runS $ do
 bigNumToWord :: BigNum -> Word#
 bigNumToWord (BN# ba) = indexWordArray# ba 0#
 
+bigNumIdx :: BigNum -> Int# -> Word#
+bigNumIdx (BN# ba) idx = indexWordArray# ba idx 
+
 -- | Truncate a BigNum to a single Int#
 bigNumToInt :: BigNum -> Int#
 bigNumToInt (BN# ba) = indexIntArray# ba 0#
@@ -467,6 +625,12 @@ wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIF
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
   (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` w#)
+
+-- | Return @1#@ iff BigNum holds one 'Word#' equal to 0##
+isZeroBigNum# :: BigNum -> Int#
+isZeroBigNum# bn =
+  (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` 0##)
+
 
 -- | Return @1#@ iff BigNum is greater than a given 'Word#'.
 gtBigNumWord# :: BigNum -> Word# -> Int#
@@ -549,35 +713,68 @@ foreign import ccall unsafe "integer_bn_lshift"
 
 -- ** Arithmetic operations
 
+plusBigNum :: BigNum -> BigNum -> BigNum
+plusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    (I# i#) <- liftIO (bn_add mbr# nr# a# na# b# nb#)
+    shrinkBigNum r i# >>= freezeBigNum
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = (maxInt# na# nb#) +# 1#
+
+minusBigNum :: BigNum -> BigNum -> (BigNum, Bool)
+minusBigNum a@(BN# a#) b@(BN# b#) = runS $ do
+    r@(MBN# mbr#) <- newBigNum nr#
+    ba@(BA# negValue#) <- newByteArray 4#
+    (I# i#) <- liftIO (bn_sub mbr# nr# a# na# b# nb# negValue#)
+    (I# neg#) <- readInt32ByteArray ba
+    bn <- shrinkBigNum r i# >>= freezeBigNum
+    return (bn, isTrue# neg#)
+  where
+    na# = wordsInBigNum# a
+    nb# = wordsInBigNum# b
+    nr# = maxInt# na# nb#
+
+foreign import ccall unsafe "integer_bn_add"
+  bn_add :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> IO Int
+
+foreign import ccall unsafe "integer_bn_sub"
+  bn_sub :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> ByteArray# -> Int# -> ByteArray# -> IO Int
+
+maxInt# :: Int# -> Int# -> Int#
+maxInt# x# y#
+  | isTrue# (x# >=# y#) = x#
+  | True = y#
+
 -- | Add given Word# to BigNum.
-plusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
-               -> BigNum -> Word# -> BigNum
-plusBigNumWord neg# a w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
+plusBigNumWord :: BigNum -> Word# -> BigNum
+plusBigNumWord a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum nr#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_add_word neg# mbr# na# w#)
+  (I# i#) <- liftIO (bn_add_word mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
+   nr# = na# +# 1#
 
 -- size_t integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_add_word"
-  bn_add_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
+  bn_add_word :: MutableByteArray# s -> Int# -> Word# -> IO Int
 
 -- | Subtract given Word# from BigNum.
-minusBigNumWord :: Int# -- ^ Sign of number, 1# if negative
-                -> BigNum -> Word# -> BigNum
-minusBigNumWord neg# a w# = runS $ do
-  r@(MBN# mbr#) <- newBigNum na# -- TODO(SN): make sure enough allocated
+minusBigNumWord :: BigNum -> Word# -> BigNum
+minusBigNumWord a w# = runS $ do
+  r@(MBN# mbr#) <- newBigNum na#
   copyBigNum a r
-  (I# i#) <- liftIO (bn_sub_word neg# mbr# na# w#)
+  (I# i#) <- liftIO (bn_sub_word mbr# na# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
    na# = wordsInBigNum# a
 
 -- size_t integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w)
 foreign import ccall unsafe "integer_bn_sub_word"
-  bn_sub_word :: Int# -> MutableByteArray# s -> Int# -> Word# -> IO Int
+  bn_sub_word :: MutableByteArray# s -> Int# -> Word# -> IO Int
 
 -- | Multiply given BigNum with given Word#.
 timesBigNumWord :: BigNum -> Word# -> BigNum

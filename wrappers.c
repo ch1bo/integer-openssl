@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <openssl/opensslv.h>
 #include <openssl/bn.h>
 
 // These functions wrap high-level openssl functions to work with word arrays
@@ -6,6 +7,22 @@
 // relocated by "expand" functions as that memory is managed by the Haskell RTS.
 // Furthermore, most functions return the number of actually used words on the
 // modified word array.
+
+
+#if OPENSSL_VERSION_NUMBER >= 0x101000000L
+struct bignum_st {
+    BN_ULONG *d;                /* Pointer to an array of 'BN_BITS2' bit
+                                 * chunks. */
+    int top;                    /* Index of last used d +1. */
+    /* The next are internal book keeping for bn_expand. */
+    int dmax;                   /* Size of the d array. */
+    int neg;                    /* one if the number is negative */
+    int flags;
+};
+
+typedef struct bignum_st BIGNUM;
+
+#endif
 
 // Macros to shorten BIGNUM declaration
 #define S_BIGNUM(_name, _b, _size, _neg) \
@@ -27,16 +44,17 @@ size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize,
   return r.top;
 }
 
-int integer_bn_add_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
-  S_BIGNUM(r, rb, rsize, rneg)
+int integer_bn_add_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
+  U_BIGNUM(r, rb, rsize)
+  r.top = rsize - 1; // See below
   int ret = BN_add_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);
   return r.top;
 }
 
-int integer_bn_sub_word(int rneg, BN_ULONG *rb, size_t rsize, BN_ULONG w) {
-  S_BIGNUM(r, rb, rsize, rneg)
+int integer_bn_sub_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
+  U_BIGNUM(r, rb, rsize)
   int ret = BN_sub_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);
@@ -49,6 +67,27 @@ int integer_bn_mul_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   int ret = BN_mul_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);
+  return r.top;
+}
+
+int integer_bn_add(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize) {
+  U_BIGNUM(r, rb, rsize);
+  U_BIGNUM(a, ab, asize);
+  U_BIGNUM(b, bb, bsize);
+  int ret = BN_add(&r, &a, &b);
+  assert(ret == 1);
+  assert(r.d == rb);
+  return r.top;
+}
+
+int integer_bn_sub(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, BN_ULONG *bb, size_t bsize, int32_t *neg) {
+  U_BIGNUM(r, rb, rsize);
+  U_BIGNUM(a, ab, asize);
+  U_BIGNUM(b, bb, bsize);
+  int ret = BN_sub(&r, &a, &b);
+  assert(ret == 1);
+  assert(r.d == rb);
+  *neg = r.neg;
   return r.top;
 }
 

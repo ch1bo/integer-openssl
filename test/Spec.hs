@@ -2,6 +2,7 @@
 {-# LANGUAGE MagicHash           #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UnboxedTuples       #-}
+{-# LANGUAGE PackageImports      #-}
 
 module Main where
 
@@ -15,8 +16,10 @@ import           Test.Hspec            (Expectation, describe, hspec, it,
 import           Test.Hspec.QuickCheck (prop)
 import           Test.QuickCheck       hiding ((.&.), NonZero)
 
-import qualified GHC.Integer              as Y
-import qualified OpenSSL.GHC.Integer.Type as X
+-- import qualified GHC.Integer              as Y
+-- import qualified OpenSSL.GHC.Integer.Type as X
+import "integer-gmp"  GHC.Integer      as Y
+import "integer-openssl" GHC.Integer.Type   as X hiding (($))
 
 #include "MachDeps.h"
 
@@ -42,56 +45,120 @@ import qualified OpenSSL.GHC.Integer.Type as X
 
 main :: IO ()
 main = do
-  hspec $ do
-    describe "library vs builtin" $ do
-      describe "smallIntger" $ do
-        prop "works for random Int#" $ \(SmallInt (I# i)) ->
-          X.smallInteger i <<>> Y.smallInteger i
 
-      describe "mkInteger" $ do
-        it "can create some Integers" $ do
-          shouldEqualHex (X.mkInteger True [0xbb, 0xaa])
-                         (Y.mkInteger True [0xbb, 0xaa])
-          shouldEqualHex (X.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
-                         (Y.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
-        prop "can create random Integers" $ \(b, is) ->
-          let ints = map truncate32pos is
-          in  X.mkInteger b ints <<>> Y.mkInteger b ints
+let --vals = [40000000, 20000000, 4000000, 180000005]
+    vals1 = [0]
+    x1 = X.mkInteger True vals1 
+    y1 = Y.mkInteger True vals1
 
-      describe "timesInteger" $ do
-        prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
-          X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
+    vals2 = [0, 0, 2]
+    x2 = X.mkInteger False vals2
+    y2 = Y.mkInteger False vals2
 
-      describe "quotRemInteger" $ do
-        -- division by zero cannot be tested properly here
-        prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
-          let (# xq, qr #) = X.quotRemInteger x1 x2
-              (# yq, yr #) = Y.quotRemInteger y1 y2
-          in xq <<>> yq
+putStrLn $ "\n\nX: " <> show (I# (X.eqInteger# x1 x2)) <> "\nY: " <> show (I# (Y.eqInteger# y1 y2))
+    
+hspec $ do
+  describe "library vs builtin" $ do
+    describe "smallIntger" $ do
+      prop "works for random Int#" $ \(SmallInt (I# i)) ->
+        X.smallInteger i <<>> Y.smallInteger i
 
-      describe "negateInteger" $ do
-        it "considers min bound Int" $
-          shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
-                         (Y.negateInteger $ Y.smallInteger INT_MINBOUND#)
+    describe "mkInteger" $ do
+      it "can create some Integers" $ do
+        shouldEqualHex (X.mkInteger True [0xbb, 0xaa])
+                       (Y.mkInteger True [0xbb, 0xaa])
+        shouldEqualHex (X.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
+                       (Y.mkInteger True [0x7fffffff, 0x7fffffff, 0x3f])
+      prop "can create random Integers" $ \(b, is) ->
+        let ints = map truncate32pos is
+        in  X.mkInteger b ints <<>> Y.mkInteger b ints
 
-      describe "shiftLInteger" $ do
-        prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
-          X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
+    describe "absInteger" $ do
+      it "works for 0" $ do
+        shouldEqualHex (X.absInteger (X.smallInteger 0#)) (Y.smallInteger 0#)
+      it "works for INT_MINBOUND" $ do
+        shouldEqualHex (X.absInteger (X.smallInteger INT_MINBOUND#)) (Y.absInteger (Y.smallInteger INT_MINBOUND#))
+      prop "works for small integers" $ \(SmallInt (I# i)) ->
+        X.absInteger (X.smallInteger i) <<>> Y.absInteger (Y.smallInteger i)
+      prop "works for integers" $ \(Integers x y) ->
+        X.absInteger x <<>> Y.absInteger y
 
-      describe "wordToInteger" $ do
-        prop "works for random Word#" $ \(Positive (W# c#)) ->
-          X.wordToInteger c# <<>> Y.wordToInteger c#
+    describe "plusInteger" $ do
+      prop "can add random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        X.plusInteger x1 x2 <<>> Y.plusInteger y1 y2
 
-      describe "integerToWord" $ do
-        prop "works for random Integer" $ \(Integers x1 y1) ->
-          isTrue# (eqWord# (X.integerToWord x1) (Y.integerToWord y1))
+    describe "minusInteger" $ do
+      prop "can subtract random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        X.minusInteger x1 x2 <<>> Y.minusInteger y1 y2
 
-      describe "integerToInt" $ do
-        prop "works for random Integer" $ \(Integers x1 y1) ->
-          isTrue# (X.integerToInt x1 ==# Y.integerToInt y1)
+    describe "timesInteger" $ do
+      prop "can multiply random Integers" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        X.timesInteger x1 x2 <<>> Y.timesInteger y1 y2
 
+    describe "quotRemInteger" $ do
+      -- division by zero cannot be tested properly here
+      prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
+        let (# xq, qr #) = X.quotRemInteger x1 x2
+            (# yq, yr #) = Y.quotRemInteger y1 y2
+        in xq <<>> yq
 
-    -- describe "BigNum" $ do
+    describe "negateInteger" $ do
+      it "considers min bound Int" $
+        shouldEqualHex (X.negateInteger $ X.smallInteger INT_MINBOUND#)
+                       (Y.negateInteger $ Y.smallInteger INT_MINBOUND#)
+
+    describe "shiftLInteger" $ do
+      prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
+        X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
+
+    describe "wordToInteger" $ do
+      prop "works for random Word#" $ \(Positive (W# c#)) ->
+        X.wordToInteger c# <<>> Y.wordToInteger c#
+
+    describe "integerToWord" $ do
+      prop "works for random Integer" $ \(Integers x1 y1) ->
+        isTrue# (eqWord# (X.integerToWord x1) (Y.integerToWord y1))
+
+    describe "integerToInt" $ do
+      prop "works for random Integer" $ \(Integers x1 y1) ->
+        isTrue# (X.integerToInt x1 ==# Y.integerToInt y1)
+
+    describe "doubleFromInteger" $ do
+      prop "works for random Integer" $ \(Integers x1 y1) ->
+        isTrue# (X.doubleFromInteger x1 ==## Y.doubleFromInteger y1)
+
+    describe "encodeDoubleInteger" $ do
+      prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
+        isTrue# (X.encodeDoubleInteger x1 i ==## Y.encodeDoubleInteger y1 i)
+
+    describe "encodeFloatInteger" $ do
+      prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
+        isTrue# (X.encodeFloatInteger x1 i `eqFloat#` Y.encodeFloatInteger y1 i)
+            
+    describe "decodeDoubleInteger" $ do
+      prop "works for random Double" $ \(D# x1)  ->
+        let (# m1, e1 #) = X.decodeDoubleInteger x1 
+            (# m2, e2 #) = Y.decodeDoubleInteger x1
+        in
+          showHexX m1 == showHexY m2 && isTrue# (e1 ==# e2)
+
+    describe "signumInteger" $ do
+      prop "works for random Integer" $ \(Integers x1 y1) ->
+        X.signumInteger x1 <<>> Y.signumInteger y1
+    
+    describe "hashInteger" $ do
+      prop "works for random Integer" $ \(Integers x1 y1) ->
+        isTrue# (X.hashInteger x1 ==# Y.hashInteger y1)
+  
+    describe "eqInteger" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# (X.eqInteger# x1 x1) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
+
+    describe "neqInteger" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# (X.neqInteger# x1 x1 ==# 0#) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
+
+              -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
 
@@ -150,6 +217,7 @@ instance Arbitrary SmallInt where
                                      , (1, pure (I# INT_MINBOUND#))
                                      , (1, pure (I# INT_MAXBOUND#))
                                      ]
+
 
 -- | Datatype to test various Integers via QuickCheck.
 data Integers = Integers X.Integer Y.Integer deriving Show
