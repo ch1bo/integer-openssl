@@ -131,7 +131,7 @@ doubleFromInteger (Bp# bn) = doubleFromPositive bn
 doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn) 
 {-# NOINLINE doubleFromInteger #-}
        
-
+-- | helper function to convert a positive Integer into a Double#
 doubleFromPositive :: BigNum -> Double#
 doubleFromPositive bn = doubleFromPositive' bn 0#
   where
@@ -147,13 +147,14 @@ doubleFromPositive bn = doubleFromPositive' bn 0#
                       +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
                       +## int2Double# (word2Int# l)
 
-
+-- | splits the given Word# into a high- and a low-word
 splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
 splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
                       x `and#` LOW_HALF_MASK## #)
                       
 
-      -- TODO(SN) implement
+-- | encodes the given integer into a double with the given exponent.
+-- | encodeDoubleInteger i e = i * 2 ^ e
 {-# NOINLINE encodeDoubleInteger #-}
 encodeDoubleInteger :: Integer -> Int# -> Double#
 encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
@@ -176,19 +177,6 @@ encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
               f newAcc newIdx newE
 encodeDoubleInteger (Bn# bn) e0 = 
   negateDouble# (encodeDoubleInteger (Bp# bn) e0)
-
-{-encodeDoubleInteger :: Integer -> Int# -> Double#
-encodeDoubleInteger (Positive ds0) e0 = f 0.0## ds0 e0
-    where f !acc None        (!_) = acc
-          f !acc (Some d ds) !e   = f (acc +## encodeDouble# d e)
-                                      ds
-                                      -- XXX We assume that this adding to e
-                                      -- isn't going to overflow
-                                      (e +# WORD_SIZE_IN_BITS#)
-encodeDoubleInteger (Negative ds) e
-    = negateDouble# (encodeDoubleInteger (Positive ds) e)
-encodeDoubleInteger Naught _ = 0.0##
--}
 
 -- | __word_encodeDouble does simply do some preparations and then
 -- calls 'ldexp p1 p2' in C
