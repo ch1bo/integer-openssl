@@ -183,14 +183,14 @@ encodeDoubleInteger (Bn# bn) e0 =
 foreign import ccall unsafe "__word_encodeDouble"
         encodeDouble# :: Word# -> Int# -> Double#
 
-
+-- | Same as encodeDoubleInteger, but for Float#
+{-# NOINLINE encodeFloatInteger #-}
+encodeFloatInteger :: Integer -> Int# -> Float#
+encodeFloatInteger i e = double2Float# (encodeDoubleInteger i e)
 
 -- TODO(SN) implement
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
 decodeDoubleInteger _ = (# undefined, 0# #)
-
-encodeFloatInteger :: Integer -> Int# -> Float#
-encodeFloatInteger _ _ = 0.0#
 
 -- TODO(SN) implement
 hashInteger :: Integer -> Int#

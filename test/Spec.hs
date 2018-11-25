@@ -132,7 +132,11 @@ main = do
       describe "encodeDoubleInteger" $ do
         prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
           isTrue# (X.encodeDoubleInteger x1 i ==## Y.encodeDoubleInteger y1 i)
-    
+
+      describe "encodeFloatInteger" $ do
+        prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
+          isTrue# (X.encodeFloatInteger x1 i `eqFloat#` Y.encodeFloatInteger y1 i)
+              
     -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
