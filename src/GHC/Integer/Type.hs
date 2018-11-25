@@ -220,8 +220,9 @@ decodeFloatInteger f = case decodeFloat_Int# f of
 
 
 -- TODO(SN) implement
+{-# NOINLINE hashInteger #-}
 hashInteger :: Integer -> Int#
-hashInteger _ = case undefined of _ -> 0#
+hashInteger = integerToInt
 
 -- ** Arithmetic operations
 plusInteger :: Integer -> Integer -> Integer

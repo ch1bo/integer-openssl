@@ -166,7 +166,10 @@ main = do
         prop "works for random Integer" $ \(Integers x1 y1) ->
           X.signumInteger x1 <<>> Y.signumInteger y1
       
-
+      describe "hashInteger" $ do
+        prop "works for random Integer" $ \(Integers x1 y1) ->
+          isTrue# (X.hashInteger x1 ==# Y.hashInteger y1)
+    
           -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->
     --     W# (X.bigNumToWord (X.wordToBigNum w#)) === w
