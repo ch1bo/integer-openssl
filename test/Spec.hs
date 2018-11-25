@@ -162,7 +162,10 @@ main = do
           in
             showHexX m1 == showHexY m2 && isTrue# (e1 ==# e2)
 
-
+      describe "signumInteger" $ do
+        prop "works for random Integer" $ \(Integers x1 y1) ->
+          X.signumInteger x1 <<>> Y.signumInteger y1
+      
 
           -- describe "BigNum" $ do
     --   prop "wordToBigNum . bigNumToWord" $ \w@(W# w#) ->

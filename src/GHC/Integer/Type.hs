@@ -287,7 +287,14 @@ absInteger (Bn# bn) = Bp# bn
 
 -- TODO(SN) implement
 signumInteger :: Integer -> Integer
-signumInteger _ = undefined
+signumInteger (S# 0#) = (S# 0#)
+signumInteger (S# i) 
+  | isTrue# (i ># 0#) = (S# 1#)
+  | True = (S# (-1#))
+signumInteger (Bp# bn)
+  | isTrue# (isZeroBigNum# bn) = (S# 0#)
+  | True = (S# 1#)
+signumInteger (Bn# bn) = (S# (-1#))
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
@@ -595,6 +602,12 @@ wordsInBigNum# (BN# ba#) = (sizeofByteArray# ba#) `uncheckedIShiftRL#` WORD_SHIF
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
   (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` w#)
+
+-- | Return @1#@ iff BigNum holds one 'Word#' equal to 0##
+isZeroBigNum# :: BigNum -> Int#
+isZeroBigNum# bn =
+  (wordsInBigNum# bn ==# 1#) `andI#` (bigNumToWord bn `eqWord#` 0##)
+
 
 -- | Return @1#@ iff BigNum is greater than a given 'Word#'.
 gtBigNumWord# :: BigNum -> Word# -> Int#
