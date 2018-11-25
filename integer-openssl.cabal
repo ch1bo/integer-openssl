@@ -39,9 +39,7 @@ library
   extra-libraries: crypto
   includes: openssl/bn.h
   c-sources: wrappers.c
-
-  if flag(redefine-unit-id)
-    ghc-options: -this-unit-id integer-openssl
+  --ghc-options: -this-unit-id integer-wired-in
 
 -- Internal helper library to re-export GHC.Integer module
 library integer-openssl-internal

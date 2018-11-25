@@ -22,6 +22,16 @@ main = defaultMain
       , bench "builtin" $ whnf (mkIntegerBench Y.mkInteger) big4096
       ]
     ]
+  , bgroup "encodeDoubleInteger"
+    [ bgroup "128bit"
+      [ bench "library" $ whnf encodeDoubleIntegerX (big128, 0)
+      , bench "builtin" $ whnf encodeDoubleIntegerY (big128, 0)
+      ]
+    , bgroup "4096bit"
+      [ bench "library" $ whnf encodeDoubleIntegerX (big4096, 0)
+      , bench "builtin" $ whnf encodeDoubleIntegerY (big4096, 0)
+      ]
+    ]
   , bgroup "timesInteger"
     [ bgroup "small"
       [ bench "library" $ whnf timesIntegerX (small, small_)
@@ -59,6 +69,9 @@ main = defaultMain
   big4096 = (True, [0x0..0x84] ++ [0xf]) -- 132*31+4 = 4096
   big4096_ = (False, [0x1..0x85] ++ [0xf])
 
+  encodeDoubleIntegerX = encodeDoubleIntegerBench X.mkInteger X.encodeDoubleInteger
+  encodeDoubleIntegerY = encodeDoubleIntegerBench Y.mkInteger Y.encodeDoubleInteger
+
   timesIntegerX = timesIntegerBench X.mkInteger X.timesInteger
   timesIntegerY = timesIntegerBench Y.mkInteger Y.timesInteger
 
@@ -70,6 +83,11 @@ type IntegerBench = (Bool, [Int])
 -- | Benchmark big integer creation.
 mkIntegerBench :: (Bool -> [Int] -> a) -> (Bool, [Int]) -> a
 mkIntegerBench mkInteger (p, is) = mkInteger p is
+
+encodeDoubleIntegerBench :: (Bool -> [Int] -> a) -> (a -> Int# -> Double#)
+                         -> (IntegerBench, Int) -> Double
+encodeDoubleIntegerBench mkInteger f ((p, is), (I# i#)) =
+  D# (f (mkInteger p is) i#)
 
 timesIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> a)
                   -> (IntegerBench, IntegerBench) -> a
