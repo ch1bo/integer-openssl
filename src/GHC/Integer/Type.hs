@@ -22,10 +22,9 @@ import GHC.Types
 -- TODO(SN): general:
 --  - add short cuts
 --  - look into lazyness (bang patterns)
---  - consistent style: 'monadic' vs explict state#
+--  - inlining?
 --  - 32-bit support
 --  - additional Integer operations: gcdInteger, lcmInteger, bitInteger
-
 
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
@@ -123,33 +122,12 @@ floatFromInteger i = double2Float# (doubleFromInteger i)
 
 doubleFromInteger :: Integer -> Double#
 doubleFromInteger (S# i#) = int2Double# i#
-doubleFromInteger (Bp# bn) = doubleFromPositive bn
-doubleFromInteger (Bn# bn) = negateDouble# (doubleFromPositive bn)
+doubleFromInteger (Bp# bn) = bigNumToDouble bn
+doubleFromInteger (Bn# bn) = negateDouble# (bigNumToDouble bn)
 {-# NOINLINE doubleFromInteger #-}
 
--- | Helper function to convert a positive Integer into a Double#.
-doubleFromPositive :: BigNum -> Double#
-doubleFromPositive bn = doubleFromPositive' bn 0#
-  where
-    doubleFromPositive' bn !idx =
-      let n = wordsInBigNum# bn
-          newIdx = idx +# 1# in
-      case isTrue# (idx ==# n) of
-        True ->  0.0##
-        _ -> case bigNumIdx bn idx of
-                x -> case splitHalves x of
-                  (# h, l #) -> (doubleFromPositive' bn newIdx)
-                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
-                      +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
-                      +## int2Double# (word2Int# l)
-
--- | Splits the given Word# into a high- and a low-word.
-splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
-splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
-                      x `and#` LOW_HALF_MASK## #)
-
--- | encodes the given integer into a double with the given exponent.
--- | encodeDoubleInteger i e = i * 2 ^ e
+-- | Encodes the given integer into a double with the given exponent, i.e.
+-- encodeDoubleInteger i e = i * 2 ^ e
 encodeDoubleInteger :: Integer -> Int# -> Double#
 encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
 encodeDoubleInteger (S# INT_MINBOUND#) e0 = encodeDouble# (int2Word# INT_MINBOUND#) e0
@@ -173,38 +151,36 @@ encodeDoubleInteger (Bn# bn) e0 =
   negateDouble# (encodeDoubleInteger (Bp# bn) e0)
 {-# NOINLINE encodeDoubleInteger #-}
 
--- | __word_encodeDouble does simply do some preparations and then
--- calls 'ldexp p1 p2' in C
+-- __word_encodeDouble does simply do some preparations and then calls
+-- 'ldexp p1 p2' in C
 foreign import ccall unsafe "__word_encodeDouble"
   encodeDouble# :: Word# -> Int# -> Double#
+
+decodeDoubleInteger :: Double# -> (# Integer, Int# #)
+decodeDoubleInteger d =
+  case decodeDouble_2Int# d of
+    (# mantSign, mantHigh, mantLow, exp #) ->
+      let mant = (uncheckedShiftL# mantHigh HIGH_HALF_SHIFT#) `or#` mantLow
+          bn = wordToBigNum mant
+          int = case isTrue# (mantSign ==# 1#) of
+                  True -> bigNumToInteger bn
+                  False -> bigNumToNegInteger bn
+      in  (# int, exp #)
+-- TODO(SN): 32bit support
+-- #elif WORD_SIZE_IN_BITS == 32
+--   case decodeDouble_2Int# d of
+--    (# mantSign, mantHigh, mantLow, exp #) ->
+--      let mant = ((wordToInteger mantHigh `timesInteger` twoToTheThirtytwoInteger)
+--                  `plusInteger` wordToInteger mantLow)
+--          int = smallInteger mantSign `timesInteger` mant
+--      in  (# int, exp #)
+-- #endif
+{-# NOINLINE decodeDoubleInteger #-}
 
 -- | Same as encodeDoubleInteger, but for Float#
 encodeFloatInteger :: Integer -> Int# -> Float#
 encodeFloatInteger i e = double2Float# (encodeDoubleInteger i e)
 {-# NOINLINE encodeFloatInteger #-}
-
-decodeDoubleInteger :: Double# -> (# Integer, Int# #)
-decodeDoubleInteger d =
-#if WORD_SIZE_IN_BITS == 64
-  case decodeDouble_2Int# d of
-    (# mantSign, mantHigh, mantLow, exp #) ->
-      let mant = (uncheckedShiftL# mantHigh HIGH_HALF_SHIFT#) `or#` mantLow
-          bn = wordToBigNum mant
-          int =
-            case isTrue# (mantSign ==# 1#) of
-              True -> bigNumToInteger bn
-              False -> bigNumToNegInteger bn
-      in
-        (# int, exp #)
-#elif WORD_SIZE_IN_BITS == 32
-  case decodeDouble_2Int# d of
-   (# mantSign, mantHigh, mantLow, exp #) ->
-       (# (smallInteger mantSign) `timesInteger`
-          (  (wordToInteger mantHigh `timesInteger` twoToTheThirtytwoInteger)
-             `plusInteger` wordToInteger mantLow),
-          exp #)
-#endif
-{-# NOINLINE decodeDoubleInteger #-}
 
 decodeFloatInteger :: Float# -> (# Integer, Int# #)
 decodeFloatInteger f = case decodeFloat_Int# f of (# mant, exp #) -> (# smallInteger mant, exp #)
@@ -237,6 +213,7 @@ plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
   (bn, False) -> bigNumToInteger bn
   (bn, True) -> bigNumToNegInteger bn
 plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
+{-# NOINLINE plusInteger #-}
 
 minusInteger :: Integer -> Integer -> Integer
 minusInteger (S# x) (S# y) =
@@ -257,6 +234,7 @@ minusInteger (Bp# x) (Bp# y) = plusInteger (Bp# x) (Bn# y)
 minusInteger (Bp# x) (Bn# y) = Bp# (plusBigNum x y)
 minusInteger (Bn# x) (Bp# y) = Bn# (plusBigNum x y)
 minusInteger (Bn# x) (Bn# y) = plusInteger (Bp# y) (Bn# x)
+{-# NOINLINE minusInteger #-}
 
 -- | Switch sign of Integer.
 negateInteger :: Integer -> Integer
@@ -276,16 +254,21 @@ absInteger (S# i)
   | True = S# (negateInt# i)
 absInteger (Bp# bn) = Bp# bn
 absInteger (Bn# bn) = Bp# bn
+{-# NOINLINE absInteger #-}
 
+-- | Return @-1@, @0@, and @1@ depending on whether argument is negative, zero,
+-- or positive, respectively.
 signumInteger :: Integer -> Integer
-signumInteger (S# 0#) = (S# 0#)
-signumInteger (S# i)
-  | isTrue# (i ># 0#) = (S# 1#)
-  | True = (S# (-1#))
-signumInteger (Bp# bn)
-  | isTrue# (isZeroBigNum# bn) = (S# 0#)
-  | True = (S# 1#)
-signumInteger (Bn# bn) = (S# (-1#))
+signumInteger i = S# (signumInteger# i)
+{-# NOINLINE signumInteger #-}
+
+-- | Return @-1#@, @0#@, and @1#@ depending on whether argument is negative,
+-- zero, or positive, respectively.
+signumInteger# :: Integer -> Int#
+signumInteger# (Bn# _) = -1#
+signumInteger# (Bp# _) = 1#
+signumInteger# (S# i#) = sgnI# i#
+-- inlinable as only internally used
 
 -- | Integer multiplication.
 timesInteger :: Integer -> Integer -> Integer
@@ -310,6 +293,7 @@ timesInteger (Bn# x) (Bp# y) = Bn# (timesBigNum x y)
 timesInteger (Bn# x) (S# y#)
   | isTrue# (y# >=# 0#) =  Bn# (timesBigNumWord x (int2Word# y#))
   | True = Bp# (timesBigNumWord x (int2Word# (negateInt# y#)))
+{-# NOINLINE timesInteger #-}
 
 -- | Construct 'Integer' from the product of two 'Int#'s
 timesInt2Integer :: Int# -> Int# -> Integer
@@ -330,6 +314,7 @@ timesInt2Integer x# y# =
     (# True, True #) -> case timesWord2# (int2Word# x#) (int2Word# y#) of
       (# 0##, l #) -> inline wordToInteger l
       (# h, l #) -> Bp# (wordToBigNum2 h l)
+-- inlinable as only internally used
 
 -- | Integer division rounded to zero, calculating 'quotInteger' and
 -- 'remInteger'. Divisor must be non-zero or a division-by-zero will be raised.
@@ -373,25 +358,36 @@ quotRemInteger i@(S# i#) (Bp# d) -- need to account for (S# minBound)
     | True {- abs(i) == d -} = (# S# -1#, S# 0# #)
 {-# NOINLINE quotRemInteger #-}
 
--- TODO(SN) implement
 quotInteger :: Integer -> Integer -> Integer
-quotInteger _ _ = undefined
+quotInteger n d = case quotRemInteger n d of (# q, _ #) -> q
+{-# NOINLINE quotInteger #-}
 
--- TODO(SN) implement
 remInteger :: Integer -> Integer -> Integer
-remInteger _ _ = undefined
+remInteger n d = case quotRemInteger n d of (# _, r #) -> r
+{-# NOINLINE remInteger #-}
 
--- TODO(SN) implement
 divModInteger :: Integer -> Integer -> (# Integer, Integer #)
-divModInteger _ _ = (# undefined, undefined #)
+divModInteger n d
+  | isTrue# (signumInteger# r ==# negateInt# (signumInteger# d)) =
+    let !q' = q `minusInteger` (S# 1#)
+        !r' = r `plusInteger` d
+    in (# q', r' #)
+  | True = qr
+ where
+  !qr@(# q, r #) = quotRemInteger n d
+{-# NOINLINE divModInteger #-}
 
--- TODO(SN) implement
 divInteger :: Integer -> Integer -> Integer
-divInteger _ _ = undefined
+-- same-sign ops can be handled by more efficient 'quotInteger'
+divInteger n d | isTrue# (signumInteger# n ==# signumInteger# d) = quotInteger n d
+divInteger n d = case inline divModInteger n d of (# q, _ #) -> q
+{-# NOINLINE divInteger #-}
 
--- TODO(SN) implement
 modInteger :: Integer -> Integer -> Integer
-modInteger _ _ = undefined
+-- same-sign ops can be handled by more efficient 'remInteger'
+modInteger n d | isTrue# (signumInteger# n ==# signumInteger# d) = remInteger n d
+modInteger n d = case inline divModInteger n d of (# _, r #) -> r
+{-# NOINLINE modInteger #-}
 
 -- ** Bit operations
 
@@ -590,6 +586,27 @@ bigNumToNegInteger bn
   | True = Bn# bn
   where
     i# = negateInt# (word2Int# (bigNumToWord bn))
+
+-- | Helper function to convert a BigNum into a Double#.
+bigNumToDouble :: BigNum -> Double#
+bigNumToDouble bn = go bn 0#
+  where
+    go bn !idx =
+      let n = wordsInBigNum# bn
+          newIdx = idx +# 1# in
+      case isTrue# (idx ==# n) of
+        True ->  0.0##
+        _ -> case bigNumIdx bn idx of
+                x -> case splitHalves x of
+                  (# h, l #) -> (go bn newIdx)
+                      *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
+                      +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
+                      +## int2Double# (word2Int# l)
+
+-- | Splits the given Word# into a high- and a low-word.
+splitHalves :: Word# -> (# {- High -} Word#, {- Low -} Word# #)
+splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
+                      x `and#` LOW_HALF_MASK## #)
 
 -- ** Comparisons
 
@@ -912,8 +929,13 @@ mapWordArray# a# b# mba# f i# s =
 
 -- * Borrowed things
 
--- ** From integer-gmp (requires -XRebindableSyntax):
--- monadic combinators for low-level state threading
+-- ** From integer-gmp: "ghc-prim" style helpers
+
+-- branchless version
+sgnI# :: Int# -> Int#
+sgnI# x# = (x# ># 0#) -# (x# <# 0#)
+
+-- ** From integer-gmp: monadic combinators for low-level state threading
 
 type S s a = State# s -> (# State# s, a #)
 

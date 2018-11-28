@@ -77,16 +77,16 @@ main = hspec $ do
     prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
       isTrue# (X.encodeDoubleInteger x1 i ==## Y.encodeDoubleInteger y1 i)
 
-  describe "encodeFloatInteger" $ do
-    prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
-      isTrue# (X.encodeFloatInteger x1 i `eqFloat#` Y.encodeFloatInteger y1 i)
-
   describe "decodeDoubleInteger" $ do
     prop "works for random Double" $ \(D# x1)  ->
       let (# m1, e1 #) = X.decodeDoubleInteger x1
           (# m2, e2 #) = Y.decodeDoubleInteger x1
       in
         showHexX m1 == showHexY m2 && isTrue# (e1 ==# e2)
+
+  describe "encodeFloatInteger" $ do
+    prop "works for random Integer" $ \(Integers x1 y1, SmallInt (I# i)) ->
+      isTrue# (X.encodeFloatInteger x1 i `eqFloat#` Y.encodeFloatInteger y1 i)
 
   describe "hashInteger" $ do
     prop "works for random Integer" $ \(Integers x1 y1) ->
@@ -128,6 +128,13 @@ main = hspec $ do
     prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
       let (# xq, qr #) = X.quotRemInteger x1 x2
           (# yq, yr #) = Y.quotRemInteger y1 y2
+      in xq <<>> yq
+
+  describe "divModInteger" $ do
+    -- division by zero cannot be tested properly here
+    prop "can divide random Integers" $ \((Integers x1 y1), NonZero (Integers x2 y2)) ->
+      let (# xq, qr #) = X.divModInteger x1 x2
+          (# yq, yr #) = Y.divModInteger y1 y2
       in xq <<>> yq
 
   describe "shiftLInteger" $ do

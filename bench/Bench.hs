@@ -88,6 +88,20 @@ main = defaultMain
       , bench "builtin" $ whnf quotRemIntegerY (big4096_, big4096)
       ]
     ]
+  , bgroup "divModInteger"
+    [ bgroup "small"
+      [ bench "library" $ whnf divModIntegerX (small, small_)
+      , bench "builtin" $ whnf divModIntegerY (small, small_)
+      ]
+    , bgroup "128bit"
+      [ bench "library" $ whnf divModIntegerX (big128_, big128)
+      , bench "builtin" $ whnf divModIntegerY (big128_, big128)
+      ]
+    , bgroup "4096bit"
+      [ bench "library" $ whnf divModIntegerX (big4096_, big4096)
+      , bench "builtin" $ whnf divModIntegerY (big4096_, big4096)
+      ]
+    ]
   ]
  where
   small = (True, [123])
@@ -109,8 +123,11 @@ main = defaultMain
   timesIntegerX = integer2Bench X.mkInteger X.timesInteger
   timesIntegerY = integer2Bench Y.mkInteger Y.timesInteger
 
-  quotRemIntegerX = quotRemIntegerBench X.mkInteger X.quotRemInteger
-  quotRemIntegerY = quotRemIntegerBench Y.mkInteger Y.quotRemInteger
+  quotRemIntegerX = integer2TupleBench X.mkInteger X.quotRemInteger
+  quotRemIntegerY = integer2TupleBench Y.mkInteger Y.quotRemInteger
+
+  divModIntegerX = integer2TupleBench X.mkInteger X.divModInteger
+  divModIntegerY = integer2TupleBench Y.mkInteger Y.divModInteger
 
 type IntegerBench = (Bool, [Int])
 
@@ -122,11 +139,11 @@ integer2Bench :: (Bool -> [Int] -> a) -> (a -> a -> a)
                   -> (IntegerBench, IntegerBench) -> a
 integer2Bench mkInteger f ((p, is), (p2, is2)) = f (mkInteger p is) (mkInteger p2 is2)
 
+integer2TupleBench :: (Bool -> [Int] -> a) -> (a -> a -> (# a, a #))
+                  -> (IntegerBench, IntegerBench) -> (a, a)
+integer2TupleBench mkInteger quotRemInteger ((p, is), (p2, is2)) =
+  case quotRemInteger (mkInteger p is) (mkInteger p2 is2) of (# q, r #) -> (q, r)
+
 encodeDoubleIntegerBench :: (Bool -> [Int] -> a) -> (a -> Int# -> Double#)
                          -> (IntegerBench, Int) -> Double
 encodeDoubleIntegerBench mkInteger f ((p, is), (I# i#)) = D# (f (mkInteger p is) i#)
-
-quotRemIntegerBench :: (Bool -> [Int] -> a) -> (a -> a -> (# a, a #))
-                  -> (IntegerBench, IntegerBench) -> (a, a)
-quotRemIntegerBench mkInteger quotRemInteger ((p, is), (p2, is2)) =
-  case quotRemInteger (mkInteger p is) (mkInteger p2 is2) of (# q, r #) -> (q, r)
