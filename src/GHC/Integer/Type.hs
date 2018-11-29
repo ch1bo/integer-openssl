@@ -494,9 +494,18 @@ shiftLInteger (Bp# bn) n# = Bp# (shiftLBigNum bn n#)
 shiftLInteger (Bn# bn) n# = Bn# (shiftLBigNum bn n#)
 {-# NOINLINE shiftLInteger #-}
 
--- TODO(SN) implement
+-- | Arighmetic shift-right, i.e. the MSB is replicated.
 shiftRInteger :: Integer -> Int# -> Integer
-shiftRInteger _ _ = undefined
+shiftRInteger x 0# = x
+shiftRInteger (S# 0#) _  = S# 0#
+shiftRInteger (S# i#) n#
+  -- const -1 if shifted 'too far'
+  | isTrue# (n# >=# WORD_SIZE_IN_BITS#) = S# ((i# <# 0#) *# (-1#))
+  | True = S# (uncheckedIShiftRA# i# n#)
+shiftRInteger (Bp# bn) n# = bigNumToInteger (shiftRBigNum bn n#)
+-- TODO(SN): naive right shift preserving two's complement
+shiftRInteger i@(Bn# _) n# = complementInteger (shiftRInteger (complementInteger i) n#)
+{-# NOINLINE shiftRInteger #-}
 
 -- TODO(SN) implement
 testBitInteger :: Integer -> Int# -> Bool
@@ -825,8 +834,8 @@ shiftLBigNum x 0# = x
 shiftLBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
 shiftLBigNum a@(BN# ba#) c# = runS $ do
-  r@(MBN# mbq#) <- newBigNum nq#
-  (I# i#) <- liftIO (bn_lshift mbq# nq# ba# na# c#)
+  r@(MBN# mbr#) <- newBigNum nq#
+  (I# i#) <- liftIO (bn_lshift mbr# nq# ba# na# c#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
@@ -836,6 +845,22 @@ shiftLBigNum a@(BN# ba#) c# = runS $ do
 -- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
 foreign import ccall unsafe "integer_bn_lshift"
   bn_lshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
+
+-- | Shift right logical, undefined for negative Int#.
+shiftRBigNum :: BigNum -> Int# -> BigNum
+shiftRBigNum x 0# = x
+shiftRBigNum x _
+  | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
+shiftRBigNum a@(BN# ba#) c# = runS $ do
+  r@(MBN# mbr#) <- newBigNum na#
+  (I# i#) <- liftIO (bn_rshift mbr# na# ba# na# c#)
+  shrinkBigNum r i# >>= freezeBigNum
+ where
+  na# = wordsInBigNum# a
+
+-- size_t integer_bn_rshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
+foreign import ccall unsafe "integer_bn_rshift"
+  bn_rshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
 
 -- ** Arithmetic operations
 

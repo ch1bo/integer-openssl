@@ -44,9 +44,22 @@ size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize,
   return r.top;
 }
 
+size_t integer_bn_rshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
+  U_BIGNUM(r, rb, rsize)
+  r.top = 0;
+  U_BIGNUM(a, ab, asize)
+  // printf("bn_rshift %s (%d) %lu", BN_bn2hex(&a), a.top, n);
+  int ret = BN_rshift(&r, &a, n);
+  assert(ret == 1);
+  assert(r.d == rb);
+  // printf(" = %s (%d)\n", BN_bn2hex(&r), r.top);
+  return r.top;
+}
+
 int integer_bn_add_word(BN_ULONG *rb, size_t rsize, BN_ULONG w) {
   U_BIGNUM(r, rb, rsize)
-  r.top = rsize - 1; // See below
+  // printf("bn_add_word %s (%d) %lu", BN_bn2hex(&r), r.top, w);
+  r.top = rsize - 1; // rsize is +1 of actual used (see timesBigNumWord)
   int ret = BN_add_word(&r, w);
   assert(ret == 1);
   assert(r.d == rb);

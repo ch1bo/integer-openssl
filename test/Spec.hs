@@ -228,8 +228,12 @@ main = hspec $ do
         X.complementInteger x1 <<>> Y.complementInteger y1
 
     describe "shiftLInteger" $ do
-      prop "works for random Int#" $ \(SmallInt (I# i), Positive (I# c#)) ->
-        X.shiftLInteger (X.smallInteger i) c# <<>> Y.shiftLInteger (Y.smallInteger i) c#
+      prop "works for random Integers and positive shifts" $ \((Integers x1 y1), Positive (I# i#)) ->
+        X.shiftLInteger x1 i# <<>> Y.shiftLInteger y1 i#
+
+    describe "shiftRInteger" $ do
+      prop "works for random Integers and positive shifts" $ \((Integers x1 y1), Positive (I# i#)) ->
+        X.shiftRInteger x1 i# <<>> Y.shiftRInteger y1 i#
 
     describe "eqInteger" $ do
       prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
