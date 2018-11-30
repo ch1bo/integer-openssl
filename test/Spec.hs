@@ -239,13 +239,34 @@ main = hspec $ do
       prop "works for random Integer" $ \((Integers x1 y1), (I# i#)) ->
         X.testBitInteger x1 i# === Y.testBitInteger y1 i#
 
-    describe "eqInteger" $ do
+    describe "compareInteger" $ do
       prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
-        isTrue# (X.eqInteger# x1 x1) && isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
+        (X.compareInteger x1 x2) === (Y.compareInteger y1 y2)
+
+    describe "eqInteger" $ do
+      prop "x == x" $ \x1 -> isTrue# (X.eqInteger# x1 x1)
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# ((X.eqInteger# x1 x2) ==# (Y.eqInteger# y1 y2))
 
     describe "neqInteger" $ do
       prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
         isTrue# (X.neqInteger# x1 x1 ==# 0#) && isTrue# ((X.neqInteger# x1 x2) ==# (Y.neqInteger# y1 y2))
+
+    describe "geInteger#" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# ((X.geInteger# x1 x2) ==# (Y.geInteger# y1 y2))
+
+    describe "gtInteger#" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# ((X.gtInteger# x1 x2) ==# (Y.gtInteger# y1 y2))
+
+    describe "leInteger#" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# ((X.leInteger# x1 x2) ==# (Y.leInteger# y1 y2))
+
+    describe "ltInteger#" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
+        isTrue# ((X.ltInteger# x1 x2) ==# (Y.ltInteger# y1 y2))
 
 showHexY :: Y.Integer -> String
 showHexY i

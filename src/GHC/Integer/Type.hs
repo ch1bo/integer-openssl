@@ -521,9 +521,25 @@ testBitInteger (Bn# bn) n# = testBitNegBigNum bn n#
 
 -- ** Comparison
 
--- TODO(SN) implement
+-- | Compare given integers. Uses the S#/Bp#/Bn# constructors to efficiently
+-- test corner cases.
 compareInteger :: Integer -> Integer -> Ordering
-compareInteger _ _ = undefined
+compareInteger (S# a#) (S# b#)
+  | isTrue# (a# <# b#) = LT
+  | isTrue# (a# ># b#) = GT
+  | True = EQ
+compareInteger (S# _) (Bp# _) = LT
+compareInteger (S# _) (Bn# _) = GT
+compareInteger (Bp# _) (S# _) = GT
+compareInteger (Bn# _) (S# _) = LT
+compareInteger (Bp# _) (Bn# _) = GT
+compareInteger (Bn# _) (Bp# _) = LT
+compareInteger (Bp# a#) (Bp# b#) = compareBigNum a# b#
+compareInteger (Bn# a#) (Bn# b#) = switch (compareBigNum a# b#)
+ where
+  switch LT = GT
+  switch GT = LT
+  switch EQ = EQ
 
 -- | Equal operation for Integers. Returns 0# as False and 1# as True
 eqInteger# :: Integer -> Integer -> Int#
@@ -540,21 +556,25 @@ neqInteger# i1 i2 =
     1# -> 0#
     _  -> 0#
 
--- TODO(SN) implement
 geInteger# :: Integer -> Integer -> Int#
-geInteger# _ _ = case undefined of _ -> 0#
+geInteger# a b = case compareInteger a b of
+  LT -> 0#
+  _ -> 1#
 
--- TODO(SN) implement
 gtInteger# :: Integer -> Integer -> Int#
-gtInteger# _ _ = case undefined of _ -> 0#
+gtInteger# a b = case compareInteger a b of
+  GT -> 1#
+  _ -> 0#
 
--- TODO(SN) implement
 leInteger# :: Integer -> Integer -> Int#
-leInteger# _ _ = case undefined of _ -> 0#
+leInteger# a b = case compareInteger a b of
+  GT -> 0#
+  _ -> 1#
 
--- TODO(SN) implement
 ltInteger# :: Integer -> Integer -> Int#
-ltInteger# _ _ = case undefined of _ -> 0#
+ltInteger# a b = case compareInteger a b of
+  LT -> 1#
+  _ -> 0#
 
 -- * BigNum functions
 
@@ -704,6 +724,20 @@ splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
 
 -- ** Comparisons
 
+compareBigNum :: BigNum -> BigNum -> Ordering
+compareBigNum (BN# baa#) (BN# bab#)
+  | isTrue# (na# ># nb#) = GT
+  | isTrue# (na# <# nb#) = LT
+  -- na# == nb#
+  | isTrue# (r# <# 0#) = LT
+  | isTrue# (r# ># 0#) = GT
+  -- r# ==# 0#
+  | True = EQ
+ where
+  na# = sizeofByteArray# baa#
+  nb# = sizeofByteArray# bab#
+  r# = compareByteArrays# baa# 0# bab# 0# na#
+
 -- | Return '1#' iff BigNum holds one 'Word#' equal to given 'Word#'.
 eqBigNumWord# :: BigNum -> Word# -> Int#
 eqBigNumWord# bn w# =
@@ -715,17 +749,17 @@ eqBigNum# bn1 bn2 =
   let wib1 = wordsInBigNum# bn1
       wib2 = wordsInBigNum# bn2 in
   case isTrue# (wib1 ==# wib2) of
-    True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
+    True  -> go (wib1 -# 1#) (wib2 -# 1#)
     False -> 0#
   where
-    bnEq2 0# 0# = indexBigNum# bn1 0# `eqWord#` indexBigNum# bn2 0#
-    bnEq2 0# _ = 0#
-    bnEq2 _ 0# = 0#
-    bnEq2 !idx1 !idx2 =
+    go 0# 0# = indexBigNum# bn1 0# `eqWord#` indexBigNum# bn2 0#
+    go 0# _ = 0#
+    go _ 0# = 0#
+    go !idx1 !idx2 =
       let w1 = indexBigNum# bn1 idx1
           w2 = indexBigNum# bn2 idx2 in
       case isTrue# (w1 `eqWord#` w2) of
-        True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
+        True  -> go (idx1 -# 1#) (idx2 -# 1#)
         False ->  0#
 
 -- | Return @1#@ iff BigNum holds one 'Word#' equal to 0##
