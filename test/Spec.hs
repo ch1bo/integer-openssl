@@ -1,5 +1,6 @@
 {-# LANGUAGE CPP                 #-}
 {-# LANGUAGE MagicHash           #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE UnboxedTuples       #-}
 {-# LANGUAGE PackageImports      #-}
@@ -113,9 +114,6 @@ main = hspec $ do
     prop "wordToBigNum (w1 `xor` w2) === (wordToBigNum w1) `xorBigNum` (wordToBigNum w2)" $ \(W# w1, W# w2) ->
       show (X.wordToBigNum (w1 `xor#` w2)) === show ((X.wordToBigNum w1) `X.xorBigNum` (X.wordToBigNum w2))
 
-    prop "andnBigNum bn1 bn2 == notBigNum (andBigNum bn1 bn2)" $ \(bn1, bn2) ->
-      show (X.andnBigNum bn1 bn2) === show (X.andBigNum bn1 (X.notBigNum bn2))
-
   describe "Integer" $ do
     describe "smallIntger" $ do
       prop "works for random Int#" $ \(SmallInt (I# i)) ->
@@ -226,6 +224,8 @@ main = hspec $ do
     describe "complementInteger" $ do
       prop "works for random Integers" $ \(Integers x1 y1) ->
         X.complementInteger x1 <<>> Y.complementInteger y1
+      prop "not . not === id" $ \x1 ->
+        X.complementInteger (X.complementInteger x1) === x1
 
     describe "shiftLInteger" $ do
       prop "works for random Integers and positive shifts" $ \((Integers x1 y1), Positive (I# i#)) ->
@@ -234,6 +234,10 @@ main = hspec $ do
     describe "shiftRInteger" $ do
       prop "works for random Integers and positive shifts" $ \((Integers x1 y1), Positive (I# i#)) ->
         X.shiftRInteger x1 i# <<>> Y.shiftRInteger y1 i#
+
+    describe "testBitInteger" $ do
+      prop "works for random Integer" $ \((Integers x1 y1), (I# i#)) ->
+        X.testBitInteger x1 i# === Y.testBitInteger y1 i#
 
     describe "eqInteger" $ do
       prop "works for random Integer" $ \((Integers x1 y1), (Integers x2 y2)) ->
@@ -310,17 +314,23 @@ instance Arbitrary Integers where
       ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
       pure $ Integers (X.mkInteger positive ints) (Y.mkInteger positive ints)
 
-instance Arbitrary X.BigNum where
-  arbitrary = oneof [small]
+instance Arbitrary X.Integer where
+  arbitrary = oneof [small, big]
    where
     small = do
-      (W# w) <- arbitrary
-      pure $ X.wordToBigNum w
+      (I# i) <- arbitrary
+      pure $ X.smallInteger i
 
-    -- TODO(SN): test with big bignums
-    -- big = do
-    --   ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
-    --   pure $ Integers (X.mkInteger positive ints) (Y.mkInteger positive ints)
+    big = do
+      positive <- arbitrary
+      ints <- map truncate32pos <$> arbitrary -- 31bit int chunks
+      pure $ X.mkInteger positive ints
+
+instance Arbitrary X.BigNum where
+  arbitrary =
+    suchThatMap arbitrary $ \case
+      (X.Bp# bn) -> pure bn
+      _ -> Nothing
 
 -- | Newtype to generate non-zero integer Arbitrary instance.
 newtype NonZeroIntegers = NonZero Integers deriving Show

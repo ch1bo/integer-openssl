@@ -158,7 +158,7 @@ encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
         case isTrue# (idx ==# n) of
           True -> acc
           _ ->
-              let d = bigNumIdx bn idx
+              let d = indexBigNum# bn idx
                   newAcc = acc +## encodeDouble# d e
                   newE = e +# WORD_SIZE_IN_BITS#
               in
@@ -225,12 +225,14 @@ plusInteger (S# x) (Bn# y)
 plusInteger b (S# x) = plusInteger (S# x) b
 plusInteger (Bp# x) (Bp# y) = Bp# (plusBigNum x y)
 plusInteger (Bn# x) (Bn# y) = Bn# (plusBigNum x y)
+-- TODO(SN): use compareBigNum for x == y short cut
 plusInteger (Bp# x) (Bn# y) = case minusBigNum x y of
   (bn, False) -> bigNumToInteger bn
   (bn, True) -> bigNumToNegInteger bn
 plusInteger (Bn# x) (Bp# y) = plusInteger (Bp# y) (Bn# x)
 {-# NOINLINE plusInteger #-}
 
+-- TODO(SN): don't define minus in terms of plusInteger (NOINLINE)
 minusInteger :: Integer -> Integer -> Integer
 minusInteger (S# x) (S# y) =
   case subIntC# x y of
@@ -507,9 +509,15 @@ shiftRInteger (Bp# bn) n# = bigNumToInteger (shiftRBigNum bn n#)
 shiftRInteger i@(Bn# _) n# = complementInteger (shiftRInteger (complementInteger i) n#)
 {-# NOINLINE shiftRInteger #-}
 
--- TODO(SN) implement
+-- | Test if bit n is set in Integer. Note: Negative BigNums are treated as the
+-- two's-complement, although they are not stored like that
 testBitInteger :: Integer -> Int# -> Bool
-testBitInteger _ _ = undefined
+testBitInteger (S# i#) n#
+  | isTrue# (n# <# 0#) = False
+  | isTrue# (n# >=# WORD_SIZE_IN_BITS#) = isTrue# (i# <# 0#)
+  | True = isTrue# (i# `andI#` (uncheckedIShiftL# 1# n#) /=# 0#)
+testBitInteger (Bp# bn) n# = testBitBigNum bn n#
+testBitInteger (Bn# bn) n# = testBitNegBigNum bn n#
 
 -- ** Comparison
 
@@ -650,8 +658,8 @@ wordsInMutableBigNum# (MBN# mbn#) s =
 bigNumToWord :: BigNum -> Word#
 bigNumToWord (BN# ba) = indexWordArray# ba 0#
 
-bigNumIdx :: BigNum -> Int# -> Word#
-bigNumIdx (BN# ba) idx = indexWordArray# ba idx
+indexBigNum# :: BigNum -> Int# -> Word#
+indexBigNum# (BN# ba) idx = indexWordArray# ba idx
 
 -- | Truncate a BigNum to a single Int#
 bigNumToInt :: BigNum -> Int#
@@ -682,7 +690,7 @@ bigNumToDouble bn = go bn 0#
           newIdx = idx +# 1# in
       case isTrue# (idx ==# n) of
         True ->  0.0##
-        _ -> case bigNumIdx bn idx of
+        _ -> case indexBigNum# bn idx of
                 x -> case splitHalves x of
                   (# h, l #) -> (go bn newIdx)
                       *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
@@ -710,12 +718,12 @@ eqBigNum# bn1 bn2 =
     True  -> bnEq2 (wib1 -# 1#) (wib2 -# 1#)
     False -> 0#
   where
-    bnEq2 0# 0# = bigNumIdx bn1 0# `eqWord#` bigNumIdx bn2 0#
+    bnEq2 0# 0# = indexBigNum# bn1 0# `eqWord#` indexBigNum# bn2 0#
     bnEq2 0# _ = 0#
     bnEq2 _ 0# = 0#
     bnEq2 !idx1 !idx2 =
-      let w1 = bigNumIdx bn1 idx1
-          w2 = bigNumIdx bn2 idx2 in
+      let w1 = indexBigNum# bn1 idx1
+          w2 = indexBigNum# bn2 idx2 in
       case isTrue# (w1 `eqWord#` w2) of
         True  -> bnEq2 (idx1 -# 1#) (idx2 -# 1#)
         False ->  0#
@@ -833,16 +841,16 @@ shiftLBigNum :: BigNum -> Int# -> BigNum
 shiftLBigNum x 0# = x
 shiftLBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
-shiftLBigNum a@(BN# ba#) c# = runS $ do
+shiftLBigNum a@(BN# ba#) i# = runS $ do
   r@(MBN# mbr#) <- newBigNum nq#
-  (I# i#) <- liftIO (bn_lshift mbr# nq# ba# na# c#)
+  (I# i#) <- liftIO (bn_lshift mbr# nq# ba# na# i#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
   nq# = na# +# nwords# +# 1#
-  nwords# = quotInt# c# WORD_SIZE_IN_BITS#
+  nwords# = quotInt# i# WORD_SIZE_IN_BITS#
 
--- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
+-- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n)
 foreign import ccall unsafe "integer_bn_lshift"
   bn_lshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
 
@@ -851,16 +859,40 @@ shiftRBigNum :: BigNum -> Int# -> BigNum
 shiftRBigNum x 0# = x
 shiftRBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
-shiftRBigNum a@(BN# ba#) c# = runS $ do
+shiftRBigNum a@(BN# ba#) i# = runS $ do
   r@(MBN# mbr#) <- newBigNum na#
-  (I# i#) <- liftIO (bn_rshift mbr# na# ba# na# c#)
+  (I# i#) <- liftIO (bn_rshift mbr# na# ba# na# i#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
 
--- size_t integer_bn_rshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n) {
+-- size_t integer_bn_rshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n)
 foreign import ccall unsafe "integer_bn_rshift"
   bn_rshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
+
+testBitBigNum :: BigNum -> Int# -> Bool
+testBitBigNum bn i#
+  | isTrue# (i# <# 0#) = False
+  | isTrue# (li# <# nx#) = isTrue# (testBitWord# (indexBigNum# bn li#) bi#)
+  | True = False
+  where
+    !(# li#, bi# #) = quotRemInt# i# WORD_SIZE_IN_BITS#
+    nx# = wordsInBigNum# bn
+
+testBitNegBigNum :: BigNum -> Int# -> Bool
+testBitNegBigNum bn i#
+  | isTrue# (i# <# 0#) = False
+  | isTrue# (li# >=# nx#) = True
+  | allZ li# = isTrue# ((testBitWord#
+                         (indexBigNum# bn li# `minusWord#` 1##) bi#) ==# 0#)
+  | True = isTrue# ((testBitWord# (indexBigNum# bn li#) bi#) ==# 0#)
+  where
+    !(# li#, bi# #) = quotRemInt# i# WORD_SIZE_IN_BITS#
+    nx# = wordsInBigNum# bn
+
+    allZ 0# = True
+    allZ j | isTrue# (indexBigNum# bn (j -# 1#) `eqWord#` 0##) = allZ (j -# 1#)
+           | True = False
 
 -- ** Arithmetic operations
 
@@ -972,6 +1004,7 @@ foreign import ccall unsafe "integer_bn_mul"
 quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
 quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
 quotRemBigNumWord a 1## = (# a, 0## #)
+-- TODO(SN): use compareBigNumWord for a/1 and a < w shurt cuts
 quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (I# r#)) -> (# q, int2Word# r# #)
  where
   na# = wordsInBigNum# a
@@ -1074,6 +1107,14 @@ maxInt# :: Int# -> Int# -> Int#
 maxInt# x# y#
   | isTrue# (x# >=# y#) = x#
   | True = y#
+
+bitWord# :: Int# -> Word#
+bitWord# = uncheckedShiftL# 1##
+{-# INLINE bitWord# #-}
+
+testBitWord# :: Word# -> Int# -> Int#
+testBitWord# w# i# = (bitWord# i# `and#` w#) `neWord#` 0##
+{-# INLINE testBitWord# #-}
 
 -- ** From integer-gmp: monadic combinators for low-level state threading
 
