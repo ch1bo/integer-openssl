@@ -40,7 +40,7 @@ library
   includes: openssl/bn.h
   c-sources: wrappers.c
   --ghc-options: -this-unit-id integer-wired-in
-  ghc-options: -Wcompat
+  ghc-options: -Wall -Wcompat
 
 -- Internal helper library to re-export GHC.Integer module
 library integer-openssl-internal

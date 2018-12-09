@@ -345,7 +345,7 @@ quotRemInteger _ (S# 0#) = -- will raise division by zero
   (# S# (quotInt# 0# 0#), S# (remInt# 0# 0#) #)
 quotRemInteger (S# 0#) _ = (# S# 0#, S# 0# #)
 quotRemInteger (S# n#) (S# d#) =
-  let (# q#, r# #) = quotRemInt# n# d#
+  let !(# q#, r# #) = quotRemInt# n# d#
   in  (# S# q#, S# r# #)
 quotRemInteger (Bp# n) (Bp# d) =
   let (# q, r #) = quotRemBigNum n d
@@ -360,16 +360,16 @@ quotRemInteger (Bn# n) (Bp# d) =
   let (# q, r #) = quotRemBigNum n d
   in  (# bigNumToNegInteger q, bigNumToNegInteger r #)
 quotRemInteger (Bp# n) (S# d#)
-  | isTrue# (d# >=# 0#) = let (# q, r# #) = quotRemBigNumWord n (int2Word# d#)
+  | isTrue# (d# >=# 0#) = let !(# q, r# #) = quotRemBigNumWord n (int2Word# d#)
                           in  (# bigNumToInteger q, inline wordToInteger r# #)
-  | True = let (# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
+  | True = let !(# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
            in  (# bigNumToNegInteger q, inline wordToInteger r# #)
 quotRemInteger (Bn# n) (S# d#)
-  | isTrue# (d# >=# 0#) = let (# q, r# #) = quotRemBigNumWord n (int2Word# d#)
+  | isTrue# (d# >=# 0#) = let !(# q, r# #) = quotRemBigNumWord n (int2Word# d#)
                           in  (# bigNumToNegInteger q, inline wordToNegInteger r# #)
-  | True = let (# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
+  | True = let !(# q, r# #) = quotRemBigNumWord n (int2Word# (negateInt# d#))
            in  (# bigNumToInteger q, inline wordToNegInteger r# #)
-quotRemInteger i@(S# _) (Bn# d) = (# S# 0#, i #) -- since i < d
+quotRemInteger i@(S# _) (Bn# _) = (# S# 0#, i #) -- since i < d
 quotRemInteger i@(S# i#) (Bp# d) -- need to account for (S# minBound)
     | isTrue# (i# ># 0#) = (# S# 0#, i #)
     | isTrue# (gtBigNumWord# d (int2Word# (negateInt# i#))) = (# S# 0#, i #)
@@ -603,12 +603,11 @@ freezeBigNum (MBN# mba#) s =
 
 -- | Shrink a MutableBigNum to the given count of Word#.
 shrinkBigNum :: MutableBigNum s -> Int# -> S s (MutableBigNum s)
-shrinkBigNum mba@(MBN# mba#) 0# s =
+shrinkBigNum mba 0# s =
   -- BigNum always holds min one word, but clear it in this case
-  case shrinkBigNum mba 1# s of { (# s1, mba' #) ->
-  case writeWordArray# mba# 0# 0## s1 of { s2 ->
-  (# s2, mba #)
-  }}
+  case shrinkBigNum mba 1# s of
+    (# s1, mba'@(MBN# mba#) #) -> case writeWordArray# mba# 0# 0## s1 of
+      s2 -> (# s2, mba' #)
 shrinkBigNum mba@(MBN# mba#) n# s
   | isTrue# (actual# ==# desired#) = (# s', mba #)
   | True = case shrinkMutableByteArray# mba# desired# s' of s'' -> (# s'', mba #)
@@ -619,12 +618,12 @@ shrinkBigNum mba@(MBN# mba#) n# s
 -- | Find most significant word, shrink underlyng 'MutableByteArray#'
 -- accordingly to satisfy BigNum invariant.
 renormBigNum :: MutableBigNum s -> S s (MutableBigNum s)
-renormBigNum mba@(MBN# mba#) s
+renormBigNum mba@(MBN# mba#) s0
   -- TODO(SN): words# ==# 0# case?
   | isTrue# (msw# ==# 0#) = (# s2, mba #)
   | True = shrinkBigNum mba (msw# +# 1#) s2
  where
-  !(# s1, words# #) = wordsInMutableBigNum# mba s
+  !(# s1, words# #) = wordsInMutableBigNum# mba s0
   !(# s2, msw# #) = findMSW# (words# -# 1#) s1
 
   -- Finds index of the 'most-significant-word' (non 0 word)
@@ -649,20 +648,15 @@ zeroBigNum = runS (newBigNum 1# >>= writeBigNum 0# 0## >>= freezeBigNum)
 
 -- | Create a BigNum from a single Word#.
 wordToBigNum :: Word# -> BigNum
-wordToBigNum w# = runS $ do
-  mbn <- newBigNum 1#
-  writeBigNum 0# w# mbn
-  freezeBigNum mbn
+wordToBigNum w# = runS $
+  newBigNum 1# >>= writeBigNum 0# w# >>= freezeBigNum
 
 -- | Create a BigNum from two Word#.
 wordToBigNum2 :: Word# -- ^ High word
               -> Word# -- ^ low word
               -> BigNum
-wordToBigNum2 h# l# = runS $ do
-  mbn <- newBigNum 2#
-  writeBigNum 0# l# mbn
-  writeBigNum 1# h# mbn
-  freezeBigNum mbn
+wordToBigNum2 h# l# = runS $
+  newBigNum 2# >>= writeBigNum 0# l# >>= writeBigNum 1# h# >>= freezeBigNum
 
 -- | Get number of 'Word#' in 'BigNum'. See 'newBigNum' for shift explanation.
 wordsInBigNum# :: BigNum -> Int#
@@ -705,14 +699,14 @@ bigNumToNegInteger bn
 bigNumToDouble :: BigNum -> Double#
 bigNumToDouble bn = go bn 0#
   where
-    go bn !idx =
+    go bn' !idx =
       let n = wordsInBigNum# bn
           newIdx = idx +# 1# in
       case isTrue# (idx ==# n) of
         True ->  0.0##
-        _ -> case indexBigNum# bn idx of
+        _ -> case indexBigNum# bn' idx of
                 x -> case splitHalves x of
-                  (# h, l #) -> (go bn newIdx)
+                  (# h, l #) -> (go bn' newIdx)
                       *## (2.0## **## WORD_SIZE_IN_BITS_FLOAT## )
                       +## int2Double# (word2Int# h) *## (2.0## **## int2Double# HIGH_HALF_SHIFT#)
                       +## int2Double# (word2Int# l)
@@ -783,7 +777,7 @@ notBigNum x@(BN# x#) = notBigNum' x# nx#
   -- assumes n# >= m#
   notBigNum' a# n# = runS $ do
     mbn@(MBN# mba#) <- newBigNum n#
-    mapWordArray# a# a# mba# (\a _ -> not# a) n#
+    _ <- mapWordArray# a# a# mba# (\a _ -> not# a) n#
     renormBigNum mbn >>= freezeBigNum
 
 -- | Bitwise OR of two BigNum.
@@ -800,10 +794,10 @@ orBigNum x@(BN# x#) y@(BN# y#)
   -- assumes n# >= m#
   orBigNum' a# b# n# m# = runS $ do
     mbn@(MBN# mba#) <- newBigNum n#
-    mapWordArray# a# b# mba# or# m#
-    case isTrue# (n# ==# m#) of
-      False -> copyWordArray# a# m# mba# m# (n# -# m#)
-      True  -> return ()
+    _ <- mapWordArray# a# b# mba# or# m#
+    _ <- case isTrue# (n# ==# m#) of
+           False -> copyWordArray# a# m# mba# m# (n# -# m#)
+           True  -> return ()
     freezeBigNum mbn
 
 -- | Bitwise AND of two BigNum.
@@ -820,7 +814,7 @@ andBigNum x@(BN# x#) y@(BN# y#)
   -- assumes n# >= m#
   andBigNum' a# b# m# = runS $ do
     mbn@(MBN# mba#) <- newBigNum m#
-    mapWordArray# a# b# mba# and# m#
+    _ <- mapWordArray# a# b# mba# and# m#
     freezeBigNum mbn
 
 -- | Bitwise XOR of two BigNum.
@@ -837,10 +831,10 @@ xorBigNum x@(BN# x#) y@(BN# y#)
   -- assumes n# >= m#
   xorBigNum' a# b# n# m# = runS $ do
     mbn@(MBN# mba#) <- newBigNum n#
-    mapWordArray# a# b# mba# xor# m#
-    case isTrue# (n# ==# m#) of
-      False -> copyWordArray# a# m# mba# m# (n# -# m#)
-      True  -> return ()
+    _ <- mapWordArray# a# b# mba# xor# m#
+    _ <- case isTrue# (n# ==# m#) of
+           False -> copyWordArray# a# m# mba# m# (n# -# m#)
+           True  -> return ()
     freezeBigNum mbn
 
 -- | Bitwise ANDN of two BigNum - basically x `andBigNum` (notBigNum y). However
@@ -858,16 +852,16 @@ andnBigNum x@(BN# x#) y@(BN# y#)
   -- assumes n# >= m#
   andnBigNum' a# b# n# m# = runS $ do
     mbn@(MBN# mba#) <- newBigNum n#
-    mapWordArray# a# b# mba# (\a b -> a `and#` (not# b)) m#
-    case isTrue# (n# ==# m#) of
-      False -> copyWordArray# a# m# mba# m# (n# -# m#)
-      True  -> return ()
+    _ <- mapWordArray# a# b# mba# (\a b -> a `and#` (not# b)) m#
+    _ <- case isTrue# (n# ==# m#) of
+           False -> copyWordArray# a# m# mba# m# (n# -# m#)
+           True  -> return ()
     freezeBigNum mbn
 
   -- assumes n# < m#
   andnBigNum'' a# b# n# = runS $ do
     mbn@(MBN# mba#) <- newBigNum n#
-    mapWordArray# a# b# mba# (\a b -> a `and#` (not# b)) n#
+    _ <- mapWordArray# a# b# mba# (\a b -> a `and#` (not# b)) n#
     freezeBigNum mbn
 
 -- | Shift left logical, undefined for negative Int#.
@@ -875,14 +869,14 @@ shiftLBigNum :: BigNum -> Int# -> BigNum
 shiftLBigNum x 0# = x
 shiftLBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
-shiftLBigNum a@(BN# ba#) i# = runS $ do
+shiftLBigNum a@(BN# ba#) n# = runS $ do
   r@(MBN# mbr#) <- newBigNum nq#
-  (I# i#) <- liftIO (bn_lshift mbr# nq# ba# na# i#)
+  (I# i#) <- liftIO (bn_lshift mbr# nq# ba# na# n#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
   nq# = na# +# nwords# +# 1#
-  nwords# = quotInt# i# WORD_SIZE_IN_BITS#
+  nwords# = quotInt# n# WORD_SIZE_IN_BITS#
 
 -- size_t integer_bn_lshift(BN_ULONG *rb, size_t rsize, BN_ULONG *ab, size_t asize, size_t n)
 foreign import ccall unsafe "integer_bn_lshift"
@@ -893,9 +887,9 @@ shiftRBigNum :: BigNum -> Int# -> BigNum
 shiftRBigNum x 0# = x
 shiftRBigNum x _
   | isTrue# (eqBigNumWord# x 0##) = zeroBigNum
-shiftRBigNum a@(BN# ba#) i# = runS $ do
+shiftRBigNum a@(BN# ba#) n# = runS $ do
   r@(MBN# mbr#) <- newBigNum na#
-  (I# i#) <- liftIO (bn_rshift mbr# na# ba# na# i#)
+  (I# i#) <- liftIO (bn_rshift mbr# na# ba# na# n#)
   shrinkBigNum r i# >>= freezeBigNum
  where
   na# = wordsInBigNum# a
@@ -947,7 +941,7 @@ foreign import ccall unsafe "integer_bn_add"
 plusBigNumWord :: BigNum -> Word# -> BigNum
 plusBigNumWord a w# = runS $ do
   r@(MBN# mbr#) <- newBigNum nr#
-  copyBigNum a r
+  _ <- copyBigNum a r
   (I# i#) <- liftIO (bn_add_word mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
@@ -978,7 +972,7 @@ foreign import ccall unsafe "integer_bn_sub"
 minusBigNumWord :: BigNum -> Word# -> BigNum
 minusBigNumWord a w# = runS $ do
   r@(MBN# mbr#) <- newBigNum na#
-  copyBigNum a r
+  _ <- copyBigNum a r
   (I# i#) <- liftIO (bn_sub_word mbr# na# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
@@ -990,9 +984,9 @@ foreign import ccall unsafe "integer_bn_sub_word"
 
 -- | Multiply given BigNum with given Word#.
 timesBigNumWord :: BigNum -> Word# -> BigNum
-timesBigNumWord a@(BN# ba#) w# = runS $ do
+timesBigNumWord a w# = runS $ do
   r@(MBN# mbr#) <- newBigNum nr#
-  copyBigNum a r
+  _ <- copyBigNum a r
   (I# i#) <- liftIO (bn_mul_word mbr# nr# w#)
   shrinkBigNum r i# >>= freezeBigNum
  where
@@ -1039,15 +1033,15 @@ quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
 quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
 quotRemBigNumWord a 1## = (# a, 0## #)
 -- TODO(SN): use compareBigNumWord for a/1 and a < w shurt cuts
-quotRemBigNumWord a@(BN# ba#) w# = case runS divWord of (q, (I# r#)) -> (# q, int2Word# r# #)
+quotRemBigNumWord a w# = case runS divWord of (q, (I# r#)) -> (# q, int2Word# r# #)
  where
   na# = wordsInBigNum# a
   nq# = na# +# 1#
   divWord = do
     q@(MBN# mbq#) <- newBigNum nq#
-    copyBigNum a q
+    _ <- copyBigNum a q
     qtopba@(BA# qtopba#) <- newByteArray 4#
-    r@(I# r#) <- liftIO (bn_div_word mbq# nq# w# qtopba#)
+    r <- liftIO (bn_div_word mbq# nq# w# qtopba#)
     (I# qtop#) <- readInt32ByteArray qtopba
     q' <- shrinkBigNum q qtop# >>= freezeBigNum
     return (q', r)
@@ -1070,7 +1064,7 @@ quotRemBigNum a@(BN# ba#) d@(BN# bd#) = case runS div of (q, r) -> (# q, r #)
     r@(MBN# mbqtop#) <- newBigNum nr#
     qtopba@(BA# qtopba#) <- newByteArray 4#
     rtopba@(BA# rtopba#) <- newByteArray 4#
-    liftIO (bn_div mbq# nq# mbqtop# nr# ba# na# bd# nd# qtopba# rtopba#)
+    _ <- liftIO (bn_div mbq# nq# mbqtop# nr# ba# na# bd# nd# qtopba# rtopba#)
     (I# qtop#) <- readInt32ByteArray qtopba
     (I# rtop#) <- readInt32ByteArray rtopba
     q' <- shrinkBigNum q qtop# >>= freezeBigNum
@@ -1099,8 +1093,8 @@ data ByteArray = BA# ByteArray#
 -- easier handling.
 newByteArray :: Int# -> S s ByteArray
 newByteArray i# s =
-  let (# s1, mba# #) = newByteArray# i# s
-      (# s2, ba# #) = unsafeFreezeByteArray# mba# s1
+  let !(# s1, mba# #) = newByteArray# i# s
+      !(# s2, ba# #) = unsafeFreezeByteArray# mba# s1
   in  (# s2, BA# ba# #)
 
 readInt32ByteArray :: ByteArray -> S s Int

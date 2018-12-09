@@ -51,9 +51,9 @@ integerLogBase# b m = e'
               (# q, e #) | q `ltInteger` pw -> (# q, 2# *# e #)
               (# q, e #) -> (# q `quotInteger` pw, 2# *# e +# 1# #)
 
-    ltInteger a b = isTrue# (ltInteger# a b)
+    ltInteger x y = isTrue# (ltInteger# x y)
 
-    sqrInteger a = timesInteger a a
+    sqrInteger x = timesInteger x x
 
 -- | Calculate the integer base 2 logarithm of an 'Integer'.  The
 -- calculation is more efficient than for the general case, on
