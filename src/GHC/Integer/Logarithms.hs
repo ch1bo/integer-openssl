@@ -25,7 +25,6 @@ module GHC.Integer.Logarithms where
 
 import GHC.Prim
 import GHC.Integer.Type
-import GHC.Types
 
 -- | Calculate the integer logarithm for an arbitrary base.
 --
@@ -50,8 +49,6 @@ integerLogBase# b m = e'
     go pw = case go (sqrInteger pw) of
               (# q, e #) | q `ltInteger` pw -> (# q, 2# *# e #)
               (# q, e #) -> (# q `quotInteger` pw, 2# *# e +# 1# #)
-
-    ltInteger x y = isTrue# (ltInteger# x y)
 
     sqrInteger x = timesInteger x x
 

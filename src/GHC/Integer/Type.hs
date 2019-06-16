@@ -70,14 +70,14 @@ data Integer = S# !Int#
                -- ^ negative bignum, < minbound(Int)
 
 instance Eq Integer  where
-    a == b = isTrue# (eqInteger# a b)
-    a /= b = isTrue# (neqInteger# a b)
+    (==) = eqInteger
+    (/=) = neqInteger
 
 instance Ord Integer where
-    a <= b = isTrue# (leInteger# a b)
-    a >  b = isTrue# (gtInteger# a b)
-    a <  b = isTrue# (ltInteger# a b)
-    a >= b = isTrue# (geInteger# a b)
+    (<=) = leInteger
+    (>) = gtInteger
+    (<) = ltInteger
+    (>=) = geInteger
     compare = compareInteger
 
 -- ** Creation and conversion
@@ -407,6 +407,36 @@ modInteger n d | isTrue# (signumInteger# n ==# signumInteger# d) = remInteger n 
 modInteger n d = case inline divModInteger n d of (# _, r #) -> r
 {-# NOINLINE modInteger #-}
 
+-- TODO(SN): untested
+-- | Greatest common divisor. Implemented using 'quotRemInteger'.
+gcdInteger :: Integer -> Integer -> Integer
+gcdInteger (S# 0#)        b = absInteger b
+gcdInteger a        (S# 0#) = absInteger a
+gcdInteger (S# 1#)        _ = S# 1#
+gcdInteger (S# -1#)       _ = S# 1#
+gcdInteger _        (S# 1#) = S# 1#
+gcdInteger _       (S# -1#) = S# 1#
+gcdInteger a b = case a `remInteger` b of
+                   (S# 0#) -> b
+                   r -> gcdInteger b r
+{-# NOINLINE gcdInteger #-}
+
+-- TODO(SN): untested
+-- | Least common multiple. Implemented using 'quotInteger', 'gcdInteger' and
+-- `timesInteger'.
+lcmInteger :: Integer -> Integer -> Integer
+lcmInteger (S# 0#) !_  = S# 0#
+lcmInteger (S# 1#)  b  = absInteger b
+lcmInteger (S# -1#) b  = absInteger b
+lcmInteger _ (S# 0#)   = S# 0#
+lcmInteger a (S# 1#)   = absInteger a
+lcmInteger a (S# -1#)  = absInteger a
+lcmInteger a b = (aa `quotInteger` (aa `gcdInteger` ab)) `timesInteger` ab
+  where
+    aa = absInteger a
+    ab = absInteger b
+{-# NOINLINE lcmInteger #-}
+
 -- ** Bit operations
 
 -- | Bitwise AND of Integers.
@@ -488,7 +518,7 @@ unsafePromote x = x
 shiftLInteger :: Integer -> Int# -> Integer
 shiftLInteger x 0# = x
 shiftLInteger (S# 0#) _  = S# 0#
--- TODO(SN) re-enable shiftLInteger (S# 1#) n# = bitInteger n#
+shiftLInteger (S# 1#) n# = bitInteger n#
 shiftLInteger (S# i#) n#
   | isTrue# (i# >=# 0#) = bigNumToInteger (shiftLBigNum (wordToBigNum (int2Word# i#)) n#)
   | True = bigNumToNegInteger (shiftLBigNum (wordToBigNum (int2Word# (negateInt# i#))) n#)
@@ -508,6 +538,25 @@ shiftRInteger (Bp# bn) n# = bigNumToInteger (shiftRBigNum bn n#)
 -- TODO(SN): naive right shift preserving two's complement
 shiftRInteger i@(Bn# _) n# = complementInteger (shiftRInteger (complementInteger i) n#)
 {-# NOINLINE shiftRInteger #-}
+
+
+-- TODO(SN): untested
+popCountInteger :: Integer -> Int#
+popCountInteger (S# i#)
+  | isTrue# (i# >=# 0#) = popCntI# i#
+  | True                = negateInt# (popCntI# (negateInt# i#))
+popCountInteger (Bp# bn) = popCountBigNum bn
+popCountInteger (Bn# bn) = negateInt# (popCountBigNum bn)
+{-# NOINLINE popCountInteger #-}
+
+-- TODO(SN): untested
+-- | 'Integer' for which only 'n'-th bit is set. Undefined behaviour for
+-- negative 'n' values.
+bitInteger :: Int# -> Integer
+bitInteger i#
+  | isTrue# (i# <# (WORD_SIZE_IN_BITS# -# 1#)) = S# (uncheckedIShiftL# 1# i#)
+  | True = Bp# (bitBigNum i#)
+{-# NOINLINE bitInteger #-}
 
 -- | Test if bit n is set in Integer. Note: Negative BigNums are treated as the
 -- two's-complement, although they are not stored like that
@@ -541,14 +590,20 @@ compareInteger (Bn# a#) (Bn# b#) = switch (compareBigNum a# b#)
   switch GT = LT
   switch EQ = EQ
 
--- | Equal operation for Integers. Returns 0# as False and 1# as True
+eqInteger, neqInteger, leInteger, ltInteger, gtInteger, geInteger :: Integer -> Integer -> Bool
+eqInteger x y = isTrue# (eqInteger# x y)
+neqInteger x y = isTrue# (neqInteger# x y)
+leInteger x y = isTrue# (leInteger# x y)
+ltInteger x y = isTrue# (ltInteger# x y)
+gtInteger x y = isTrue# (gtInteger# x y)
+geInteger x y = isTrue# (geInteger# x y)
+
 eqInteger# :: Integer -> Integer -> Int#
 eqInteger# (S# i1) (S# i2) = i1 ==# i2
 eqInteger# (Bp# bn1) (Bp# bn2) = eqBigNum# bn1 bn2
 eqInteger# (Bn# bn1) (Bn# bn2) = eqBigNum# bn1 bn2
 eqInteger# _ _ = 0#
 
--- | Not-equal operation for Integers. Returns 0# as false and 1# as True
 neqInteger# :: Integer -> Integer -> Int#
 neqInteger# i1 i2 =
   case eqInteger# i1 i2 of
@@ -642,6 +697,9 @@ writeBigNum i# w# mba@(MBN# mba#) s =
 copyBigNum :: BigNum -> MutableBigNum s -> S s ()
 copyBigNum a@(BN# ba#) (MBN# mbb#) =
   copyWordArray# ba# 0# mbb# 0# (wordsInBigNum# a)
+
+oneBigNum :: BigNum
+oneBigNum = runS (newBigNum 1# >>= writeBigNum 0# 1## >>= freezeBigNum)
 
 zeroBigNum :: BigNum
 zeroBigNum = runS (newBigNum 1# >>= writeBigNum 0# 0## >>= freezeBigNum)
@@ -898,6 +956,24 @@ shiftRBigNum a@(BN# ba#) n# = runS $ do
 foreign import ccall unsafe "integer_bn_rshift"
   bn_rshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
 
+-- TODO(SN): untested
+popCountBigNum :: BigNum -> Int#
+popCountBigNum a@(BN# ba#) = word2Int# (go 0## na#)
+ where
+  go !acc# 0# = acc#
+  go !acc# i# = go (acc# `plusWord#` (popCnt# (indexWordArray# ba# i#))) (i# -# 1#)
+
+  na# = wordsInBigNum# a
+
+-- TODO(SN): untested
+bitBigNum :: Int# -> BigNum
+bitBigNum i#
+  | isTrue# (i#  <#  0#) = zeroBigNum
+  | isTrue# (i# ==#  0#) = oneBigNum
+  | True = runS $ newBigNum (li# +# 1#) >>= writeBigNum li# (uncheckedShiftL# 1## bi#) >>= freezeBigNum
+  where
+    !(# li#, bi# #) = quotRemInt# i# WORD_SIZE_IN_BITS#
+
 testBitBigNum :: BigNum -> Int# -> Bool
 testBitBigNum bn i#
   | isTrue# (i# <# 0#) = False
@@ -1143,6 +1219,10 @@ bitWord# = uncheckedShiftL# 1##
 testBitWord# :: Word# -> Int# -> Int#
 testBitWord# w# i# = (bitWord# i# `and#` w#) `neWord#` 0##
 {-# INLINE testBitWord# #-}
+
+popCntI# :: Int# -> Int#
+popCntI# i# = word2Int# (popCnt# (int2Word# i#))
+{-# INLINE popCntI# #-}
 
 -- ** From integer-gmp: monadic combinators for low-level state threading
 

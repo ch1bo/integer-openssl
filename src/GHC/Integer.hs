@@ -28,6 +28,8 @@ module GHC.Integer
   , divModInteger
   , divInteger
   , modInteger
+  , gcdInteger
+  , lcmInteger
   -- * Bit operations
   , complementInteger
   , andInteger
@@ -35,15 +37,17 @@ module GHC.Integer
   , xorInteger
   , shiftLInteger
   , shiftRInteger
+  , popCountInteger
+  , bitInteger
   , testBitInteger
   -- * Comparison
   , compareInteger
-  , eqInteger#
-  , neqInteger#
-  , geInteger#
-  , gtInteger#
-  , leInteger#
-  , ltInteger#
+  , eqInteger
+  , neqInteger
+  , geInteger
+  , gtInteger
+  , leInteger
+  , ltInteger
   ) where
 
 import GHC.Integer.Type
