@@ -40,7 +40,9 @@ import GHC.Types
 --  - look into lazyness (bang patterns)
 --  - inlining?
 --  - 32-bit support
---  - additional Integer operations: gcdInteger, lcmInteger, bitInteger
+--  - missing tests
+--  - Common 'Natural' implementation with integer-gmp (same small/big abstraction + functions)
+--  - share more things with integer-gmp (move high-level to 'base' and only BigNat/BigNum in libs?)
 
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
@@ -573,22 +575,14 @@ testBitInteger (Bn# bn) n# = testBitNegBigNum bn n#
 -- | Compare given integers. Uses the S#/Bp#/Bn# constructors to efficiently
 -- test corner cases.
 compareInteger :: Integer -> Integer -> Ordering
-compareInteger (S# a#) (S# b#)
-  | isTrue# (a# <# b#) = LT
-  | isTrue# (a# ># b#) = GT
-  | True = EQ
+compareInteger (Bp# a#) (Bp# b#) = compareBigNum a# b#
+compareInteger (Bn# a#) (Bn# b#) = compareBigNum b# a#
+compareInteger (S# a#) (S# b#) = compareInt# a# b#
 compareInteger (S# _) (Bp# _) = LT
 compareInteger (S# _) (Bn# _) = GT
-compareInteger (Bp# _) (S# _) = GT
-compareInteger (Bn# _) (S# _) = LT
-compareInteger (Bp# _) (Bn# _) = GT
-compareInteger (Bn# _) (Bp# _) = LT
-compareInteger (Bp# a#) (Bp# b#) = compareBigNum a# b#
-compareInteger (Bn# a#) (Bn# b#) = switch (compareBigNum a# b#)
- where
-  switch LT = GT
-  switch GT = LT
-  switch EQ = EQ
+compareInteger (Bp# _) _ = GT
+compareInteger (Bn# _) _ = LT
+{-# NOINLINE compareInteger #-}
 
 eqInteger, neqInteger, leInteger, ltInteger, gtInteger, geInteger :: Integer -> Integer -> Bool
 eqInteger x y = isTrue# (eqInteger# x y)
@@ -777,18 +771,23 @@ splitHalves (!x) = (# x `uncheckedShiftRL#` HIGH_HALF_SHIFT#,
 -- ** Comparisons
 
 compareBigNum :: BigNum -> BigNum -> Ordering
-compareBigNum (BN# baa#) (BN# bab#)
+compareBigNum a@(BN# baa#) (BN# bab#)
   | isTrue# (na# ># nb#) = GT
   | isTrue# (na# <# nb#) = LT
   -- na# == nb#
-  | isTrue# (r# <# 0#) = LT
-  | isTrue# (r# ># 0#) = GT
-  -- r# ==# 0#
-  | True = EQ
+  | True = go (n# -# 1#)
  where
   na# = sizeofByteArray# baa#
   nb# = sizeofByteArray# bab#
-  r# = compareByteArrays# baa# 0# bab# 0# na#
+  n# = wordsInBigNum# a
+  go i# =
+    case i# <# 0# of
+      1# -> EQ
+      _  -> case (indexWordArray# baa# i#) `ltWord#` (indexWordArray# bab# i#) of
+              1# ->  LT
+              _  -> case (indexWordArray# baa# i#) `gtWord#` (indexWordArray# bab# i#) of
+                      1# -> GT
+                      _  -> go (i# -# 1#)
 
 -- | Return '1#' iff BigNum holds one 'Word#' equal to given 'Word#'.
 eqBigNumWord# :: BigNum -> Word# -> Int#
