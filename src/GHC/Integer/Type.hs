@@ -460,6 +460,8 @@ andInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 andInteger x@(S# _) y = andInteger (unsafePromote x) y
 andInteger x y@(S# _) = andInteger x (unsafePromote y)
+-- unreachable, but to prevent 'patError'
+andInteger _ _ = S# 0#
 {-# NOINLINE andInteger #-}
 
 -- | Bitwise OR of Integers.
@@ -481,6 +483,8 @@ orInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 orInteger x@(S# _) y = orInteger (unsafePromote x) y
 orInteger x y@(S# _) = orInteger x (unsafePromote y)
+-- unreachable, but to prevent 'patError'
+orInteger _ _ = S# 0#
 {-# NOINLINE orInteger #-}
 
 -- | Bitwise XOR operation
@@ -500,6 +504,8 @@ xorInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 xorInteger x@(S# _) y = xorInteger (unsafePromote x) y
 xorInteger x y@(S# _) = xorInteger x (unsafePromote y)
+-- unreachable, but to prevent 'patError'
+xorInteger _ _ = S# 0#
 {-# NOINLINE xorInteger #-}
 
 -- | Bitwise NOT of Integers.
