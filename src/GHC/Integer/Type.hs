@@ -460,8 +460,6 @@ andInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 andInteger x@(S# _) y = andInteger (unsafePromote x) y
 andInteger x y@(S# _) = andInteger x (unsafePromote y)
--- unreachable, but to prevent 'patError'
-andInteger _ _ = S# 0#
 {-# NOINLINE andInteger #-}
 
 -- | Bitwise OR of Integers.
@@ -483,8 +481,6 @@ orInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 orInteger x@(S# _) y = orInteger (unsafePromote x) y
 orInteger x y@(S# _) = orInteger x (unsafePromote y)
--- unreachable, but to prevent 'patError'
-orInteger _ _ = S# 0#
 {-# NOINLINE orInteger #-}
 
 -- | Bitwise XOR operation
@@ -504,8 +500,6 @@ xorInteger (Bp# x) (Bn# y) =
 -- TODO/FIXME promotion-hack
 xorInteger x@(S# _) y = xorInteger (unsafePromote x) y
 xorInteger x y@(S# _) = xorInteger x (unsafePromote y)
--- unreachable, but to prevent 'patError'
-xorInteger _ _ = S# 0#
 {-# NOINLINE xorInteger #-}
 
 -- | Bitwise NOT of Integers.
@@ -513,7 +507,7 @@ complementInteger :: Integer -> Integer
 complementInteger (S# i#) = S# (notI# i#)
 complementInteger (Bp# bn) = Bn# (plusBigNumWord  bn 1##)
 complementInteger (Bn# bn) = Bp# (minusBigNumWord bn 1##)
-{-# INLINE complementInteger #-}
+{-# NOINLINE complementInteger #-}
 
 -- HACK warning! breaks invariant on purpose
 unsafePromote :: Integer -> Integer
@@ -603,6 +597,7 @@ eqInteger# (S# i1) (S# i2) = i1 ==# i2
 eqInteger# (Bp# bn1) (Bp# bn2) = eqBigNum# bn1 bn2
 eqInteger# (Bn# bn1) (Bn# bn2) = eqBigNum# bn1 bn2
 eqInteger# _ _ = 0#
+{-# NOINLINE eqInteger# #-}
 
 neqInteger# :: Integer -> Integer -> Int#
 neqInteger# i1 i2 =
@@ -610,26 +605,31 @@ neqInteger# i1 i2 =
     0# -> 1#
     1# -> 0#
     _  -> 0#
+{-# NOINLINE neqInteger# #-}
 
 geInteger# :: Integer -> Integer -> Int#
 geInteger# a b = case compareInteger a b of
   LT -> 0#
   _ -> 1#
+{-# NOINLINE geInteger# #-}
 
 gtInteger# :: Integer -> Integer -> Int#
 gtInteger# a b = case compareInteger a b of
   GT -> 1#
   _ -> 0#
+{-# NOINLINE gtInteger# #-}
 
 leInteger# :: Integer -> Integer -> Int#
 leInteger# a b = case compareInteger a b of
   GT -> 0#
   _ -> 1#
+{-# NOINLINE leInteger# #-}
 
 ltInteger# :: Integer -> Integer -> Int#
 ltInteger# a b = case compareInteger a b of
   LT -> 1#
   _ -> 0#
+{-# NOINLINE ltInteger# #-}
 
 -- * BigNum functions
 
