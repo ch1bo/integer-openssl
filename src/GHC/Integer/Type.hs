@@ -533,7 +533,6 @@ shiftRInteger (Bp# bn) n# = bigNumToInteger (shiftRBigNum bn n#)
 shiftRInteger i@(Bn# _) n# = complementInteger (shiftRInteger (complementInteger i) n#)
 {-# NOINLINE shiftRInteger #-}
 
-
 -- TODO(SN): untested
 popCountInteger :: Integer -> Int#
 popCountInteger (S# i#)
@@ -543,7 +542,6 @@ popCountInteger (Bp# bn) = popCountBigNum bn
 popCountInteger (Bn# bn) = negateInt# (popCountBigNum bn)
 {-# NOINLINE popCountInteger #-}
 
--- TODO(SN): untested
 -- | 'Integer' for which only 'n'-th bit is set. Undefined behaviour for
 -- negative 'n' values.
 bitInteger :: Int# -> Integer
