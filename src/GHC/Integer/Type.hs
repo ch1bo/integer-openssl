@@ -9,6 +9,9 @@
 {-# LANGUAGE UnboxedTuples            #-}
 {-# LANGUAGE UnliftedFFITypes         #-}
 
+-- Some overlapping patterns are used to avoid 'patError'
+{-# OPTIONS_GHC -Wno-overlapping-patterns #-}
+
 -- |
 -- Module      :  GHC.Integer.Type
 -- License     :  BSD3
@@ -147,52 +150,41 @@ doubleFromInteger (Bn# bn) = negateDouble# (bigNumToDouble bn)
 -- | Encodes the given integer into a double with the given exponent, i.e.
 -- encodeDoubleInteger i e = i * 2 ^ e
 encodeDoubleInteger :: Integer -> Int# -> Double#
-encodeDoubleInteger (S# INT_MINBOUND#) 0# = negateDouble# (encodeDouble# (int2Word# INT_MINBOUND#) 0#)
-encodeDoubleInteger (S# INT_MINBOUND#) e0 = encodeDouble# (int2Word# INT_MINBOUND#) e0
-encodeDoubleInteger (S# i) e0
-  | isTrue# (i >=# 0#) = encodeDouble# (int2Word# i) e0
-  | True = negateDouble# (encodeDouble# (int2Word# (negateInt# i)) e0)
+encodeDoubleInteger (S# 0#) _ = 0.0##
+encodeDoubleInteger (S# m#) 0# = int2Double# m#
+encodeDoubleInteger (S# m#) e# = int_encodeDouble# m# e#
 encodeDoubleInteger (Bp# bn) e0 = f 0.0## 0# e0
-    where
-      f !acc !idx !e =
-        let n = wordsInBigNum# bn
-            newIdx = idx +# 1# in
-        case isTrue# (idx ==# n) of
-          True -> acc
-          _ ->
-              let d = indexBigNum# bn idx
-                  newAcc = acc +## encodeDouble# d e
+ where
+  f !acc !idx !e =
+    let n = wordsInBigNum# bn
+        newIdx = idx +# 1#
+    in case isTrue# (idx ==# n) of
+         True -> acc
+         _ -> let d = indexBigNum# bn idx
+                  newAcc = acc +## word_encodeDouble# d e
                   newE = e +# WORD_SIZE_IN_BITS#
-              in
-              f newAcc newIdx newE
+              in  f newAcc newIdx newE
 encodeDoubleInteger (Bn# bn) e0 =
   negateDouble# (encodeDoubleInteger (Bp# bn) e0)
 {-# NOINLINE encodeDoubleInteger #-}
 
+-- provided by GHC's RTS
+foreign import ccall unsafe "__int_encodeDouble"
+  int_encodeDouble# :: Int# -> Int# -> Double#
+
 -- __word_encodeDouble does simply do some preparations and then calls
 -- 'ldexp p1 p2' in C
 foreign import ccall unsafe "__word_encodeDouble"
-  encodeDouble# :: Word# -> Int# -> Double#
+  word_encodeDouble# :: Word# -> Int# -> Double#
 
 decodeDoubleInteger :: Double# -> (# Integer, Int# #)
-decodeDoubleInteger d =
-  case decodeDouble_2Int# d of
-    (# mantSign, mantHigh, mantLow, exp #) ->
-      let mant = (uncheckedShiftL# mantHigh HIGH_HALF_SHIFT#) `or#` mantLow
-          bn = wordToBigNum mant
-          int = case isTrue# (mantSign ==# 1#) of
-                  True -> bigNumToInteger bn
-                  False -> bigNumToNegInteger bn
-      in  (# int, exp #)
--- TODO(SN): 32bit support
--- #elif WORD_SIZE_IN_BITS == 32
---   case decodeDouble_2Int# d of
---    (# mantSign, mantHigh, mantLow, exp #) ->
---      let mant = ((wordToInteger mantHigh `timesInteger` twoToTheThirtytwoInteger)
---                  `plusInteger` wordToInteger mantLow)
---          int = smallInteger mantSign `timesInteger` mant
---      in  (# int, exp #)
--- #endif
+#if WORD_SIZE_IN_BITS == 64
+decodeDoubleInteger x = case decodeDouble_Int64# x of
+                          (# m#, e# #) -> (# S# m#, e# #)
+#elif WORD_SIZE_IN_BITS == 32
+decodeDoubleInteger x = case decodeDouble_Int64# x of
+                          (# m#, e# #) -> (# int64ToInteger m#, e# #)
+#endif
 {-# NOINLINE decodeDoubleInteger #-}
 
 -- | Same as encodeDoubleInteger, but for Float#
