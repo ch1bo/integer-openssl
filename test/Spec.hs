@@ -146,6 +146,7 @@ main = hspec $ do
         isTrue# (X.doubleFromInteger x1 ==## Y.doubleFromInteger y1)
 
     describe "encodeDoubleInteger" $ do
+      -- TODO(SN): broken in lts14, but okay in lts12 ?? --seed 489753666"
       prop "identical to builtin" $ \(Integers x1 y1, SmallInt (I# i)) ->
         isTrue# (X.encodeDoubleInteger x1 i ==## Y.encodeDoubleInteger y1 i)
 
@@ -237,9 +238,23 @@ main = hspec $ do
     describe "testBitInteger" $ do
       prop "identical to builtin" $ \((Integers x1 y1), (I# i#)) ->
         X.testBitInteger x1 i# === Y.testBitInteger y1 i#
+
+    describe "bitInteger" $ do
+      it "works for single word integers" $ do
+        X.bitInteger 0# `shouldBe` (X.smallInteger 0x0000000000000001#)
+        X.bitInteger 1# `shouldBe` (X.smallInteger 0x0000000000000002#)
+        X.bitInteger 4# `shouldBe` (X.smallInteger 0x0000000000000010#)
       -- Test against "builtin" bitInteger not possible as it is not part of the GHC.Integer interface
-      prop "testBitInteger (bitInteger i) i" $ \(I# i#) ->
+      prop "testBitInteger (bitInteger i) i" $ \(Positive (I# i#)) ->
         X.testBitInteger (X.bitInteger i#) i#
+
+    describe "popCountInteger" $ do
+      -- Test against "builtin" popCountInteger not possible as it is not part of the GHC.Integer interface
+      prop "popCountInteger (bitInteger i) === 1" $ \(Positive (I# i#)) ->
+        isTrue# (X.popCountInteger (X.bitInteger i#) ==# 1#)
+
+      prop "popCountInteger (negateInteger (bitInteger i)) === -1" $ \(Positive (I# i#)) ->
+        isTrue# (X.popCountInteger (X.negateInteger (X.bitInteger i#)) ==# -1#)
 
     describe "compareInteger" $ do
       prop "identical to builtin" $ \((Integers x1 y1), (Integers x2 y2)) ->

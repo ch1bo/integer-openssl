@@ -533,7 +533,6 @@ shiftRInteger (Bp# bn) n# = bigNumToInteger (shiftRBigNum bn n#)
 shiftRInteger i@(Bn# _) n# = complementInteger (shiftRInteger (complementInteger i) n#)
 {-# NOINLINE shiftRInteger #-}
 
--- TODO(SN): untested
 popCountInteger :: Integer -> Int#
 popCountInteger (S# i#)
   | isTrue# (i# >=# 0#) = popCntI# i#
@@ -951,21 +950,26 @@ shiftRBigNum a@(BN# ba#) n# = runS $ do
 foreign import ccall unsafe "integer_bn_rshift"
   bn_rshift :: MutableByteArray# s -> Int# -> ByteArray# -> Int# -> Int# -> IO Int
 
--- TODO(SN): untested
 popCountBigNum :: BigNum -> Int#
-popCountBigNum a@(BN# ba#) = word2Int# (go 0## na#)
+popCountBigNum a@(BN# ba#) = word2Int# (go 0## (na# -# 1#))
  where
-  go !acc# 0# = acc#
-  go !acc# i# = go (acc# `plusWord#` (popCnt# (indexWordArray# ba# i#))) (i# -# 1#)
+  go !acc# i#
+    | isTrue# (i# <# 0#) = acc#
+    | True = go (acc# `plusWord#` (popCnt# (indexWordArray# ba# i#))) (i# -# 1#)
 
   na# = wordsInBigNum# a
 
--- TODO(SN): untested
 bitBigNum :: Int# -> BigNum
 bitBigNum i#
   | isTrue# (i#  <#  0#) = zeroBigNum
   | isTrue# (i# ==#  0#) = oneBigNum
-  | True = runS $ newBigNum (li# +# 1#) >>= writeBigNum li# (uncheckedShiftL# 1## bi#) >>= freezeBigNum
+  | True = runS $ do
+      mbn@(MBN# mba#) <- newBigNum (li# +# 1#)
+      -- clear all limbs (except for the most-significant limb)
+      _ <- clearWordArray# mba# 0# (li# +# 1#)
+      -- set single bit in most-significant limb
+      _ <- writeBigNum li# (uncheckedShiftL# 1## bi#) mbn
+      freezeBigNum mbn
   where
     !(# li#, bi# #) = quotRemInt# i# WORD_SIZE_IN_BITS#
 
@@ -1156,7 +1160,9 @@ foreign import ccall unsafe "integer_bn_div"
          -> ByteArray# -> ByteArray#
          -> IO Int
 
--- * ByteArray# utilities
+-- * Borrowed things - mostly from integer-gmp
+
+-- ** ByteArray# utilities
 
 data ByteArray = BA# ByteArray#
 
@@ -1170,6 +1176,13 @@ newByteArray i# s =
 
 readInt32ByteArray :: ByteArray -> S s Int
 readInt32ByteArray (BA# ba#) s = (# s, I# (indexInt32Array# ba# 0#) #)
+
+clearWordArray# :: MutableByteArray# s -> Int# -> Int# -> S s ()
+clearWordArray# mba ofs len s =
+  let offsetBytes = ofs `uncheckedIShiftL#` WORD_SHIFT#
+      lenBytes = len `uncheckedIShiftL#` WORD_SHIFT#
+      s' = setByteArray# mba offsetBytes lenBytes 0# s
+  in  (# s', () #)
 
 -- | Copy multiples of Word# between ByteArray#s with offsets in words.
 copyWordArray# :: ByteArray# -> Int# -> MutableByteArray# s -> Int# -> Int# -> S s ()
@@ -1194,9 +1207,7 @@ mapWordArray# a# b# mba# f i# s =
   in  case writeWordArray# mba# i'# w# s of
         s' -> mapWordArray# a# b# mba# f i'# s'
 
--- * Borrowed things
-
--- ** From integer-gmp: "ghc-prim" style helpers
+-- ** "ghc-prim" style helpers
 
 -- branchless version
 sgnI# :: Int# -> Int#
