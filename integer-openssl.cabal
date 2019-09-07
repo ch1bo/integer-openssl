@@ -36,7 +36,7 @@ library
                  , GHC.Integer.Type
                  , GHC.Integer.Logarithms
                  , GHC.Integer.Logarithms.Internals
-  build-depends: ghc-prim ^>= 0.5.1.0
+  build-depends: ghc-prim >= 0.5.1.0
   extra-libraries: crypto
   includes: openssl/bn.h
   c-sources: wrappers.c
