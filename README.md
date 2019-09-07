@@ -26,7 +26,7 @@ speedup compared to `integer-simple`:
 
 The source code for `integer-openssl` is released under the [BSD-3-Clause License](https://opensource.org/licenses/BSD-3-Clause).
 
-## TODO 
+## TODO and ideas
 
 - [ ] Implement the portable `GHC.Integer` interface
 - [ ] Test suite covering all functions
@@ -44,5 +44,7 @@ The source code for `integer-openssl` is released under the [BSD-3-Clause Licens
 - [ ] DRY code with integer-gmp
   + [ ] Integer functions in base and only BigNat/BigNum in libs?
   + [ ] Re-use BigNat/BigNum and exchange/use FFI/C parts if possible
+- [ ] Rename library and flags to `integer-crypto`?
+- [ ] Statically link `libcrypto` into GHC?
 
 
