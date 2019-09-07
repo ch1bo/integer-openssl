@@ -37,16 +37,6 @@ import GHC.Types
 
 -- * Integer functions
 
--- TODO(SN): general:
---  - nullBigNat equivalent for underflow / zero division?
---  - add short cuts
---  - look into lazyness (bang patterns)
---  - inlining?
---  - 32-bit support
---  - missing tests
---  - Common 'Natural' implementation with integer-gmp (same small/big abstraction + functions)
---  - share more things with integer-gmp (move high-level to 'base' and only BigNat/BigNum in libs?)
-
 #if WORD_SIZE_IN_BITS == 64
 # define INT_MINBOUND      -0x8000000000000000
 # define INT_MAXBOUND       0x7fffffffffffffff
@@ -1107,7 +1097,7 @@ foreign import ccall unsafe "integer_bn_mul"
 quotRemBigNumWord :: BigNum -> Word# -> (# BigNum, Word# #)
 quotRemBigNumWord a 0## = (# a, remWord# 0## 0## #) -- raises division by zero
 quotRemBigNumWord a 1## = (# a, 0## #)
--- TODO(SN): use compareBigNumWord for a/1 and a < w shurt cuts
+-- TODO(SN): use compareBigNumWord for a/1 and a < w short cuts
 quotRemBigNumWord a w# = case runS divWord of (q, (I# r#)) -> (# q, int2Word# r# #)
  where
   na# = wordsInBigNum# a
